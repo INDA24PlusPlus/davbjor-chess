@@ -73,6 +73,248 @@ pub fn bit_scan (bit: BitBoard) -> usize {
     MOD67[remainder]
 }
 
+/*
+Compute King Valid Moves (Incomplete)
+Moving king to surrounding spots, masking with own pieces
+Using Clear file to avoid clipping edge
+
+Spots:
+1 2 3
+8 K 4
+7 6 5
+
+TODO:
+Need check and checkmate validation later
+*/
+fn compute_king_incomplete(king: BitBoard, own_pieces: BitBoard) -> BitBoard {
+    let king_clip_h = king & CLEAR_FILE[7];
+    let king_clip_a = king & CLEAR_FILE[0];
+
+    let spot_1 = king_clip_h << 7;
+    let spot_2 = king << 8;
+    let spot_3 = king_clip_h << 9;
+    let spot_4 = king_clip_h << 1;
+
+    let spot_5 = king_clip_a >> 7;
+    let spot_6 = king >> 8;
+    let spot_7 = king_clip_a >> 9;
+    let spot_8 = king_clip_a >> 1;
+
+    let king_moves = spot_1 | spot_2 | spot_3 | spot_4 | spot_5 | spot_6 | spot_7 | spot_8;
+
+    /* Remove if own pieces block */
+    let king_valid = king_moves & !own_pieces;
+
+    /*
+    Needs check testing
+    */
+
+    king_valid
+}
+
+/*
+Compute Knights valid moves (Incomplete)
+Moving knights to surrounding spots, masking with own pieces
+Using Clear file to avoid clipping edge
+
+Spots:
+ 2 3
+1   4
+  N 
+8   5
+ 7 6
+
+TODO:
+Need check (pin) validation later
+*/
+fn compute_knight_incomplete(knight: BitBoard, own_pieces: BitBoard) -> BitBoard {
+    let clip_1 = knight & CLEAR_FILE[0] & CLEAR_FILE[1];
+    let clip_2 = knight & CLEAR_FILE[0];
+    
+    let clip_3 = knight & CLEAR_FILE[7];
+    let clip_4 = knight & CLEAR_FILE[7] & CLEAR_FILE[6];
+
+    let clip_5 = knight & CLEAR_FILE[7] & CLEAR_FILE[6];
+    let clip_6 = knight & CLEAR_FILE[7];
+    let clip_7 = knight & CLEAR_FILE[0];
+    let clip_8 = knight & CLEAR_FILE[0] & CLEAR_FILE[1];
+    
+    
+    let spot_1 = clip_1 << 6;
+    let spot_2 = clip_2 << 15;
+    let spot_3 = clip_3 << 17;
+    let spot_4 = clip_4 << 10;
+
+    let spot_5 = clip_5 >> 6;
+    let spot_6 = clip_6 >> 15;
+    let spot_7 = clip_7 >> 17;
+    let spot_8 = clip_8 >> 10;
+
+    let knight_moves = spot_1 | spot_2 | spot_3 | spot_4 | spot_5 | spot_6 | spot_7 | spot_8;
+
+    let knight_valid = knight_moves & !own_pieces;
+
+    knight_valid
+}
+
+
+/*
+Compute White Pawn valid moves (Incomplete) - Different for black
+Moving pawns to surrounding spots, masking with own pieces
+Using Clear file to avoid clipping edge
+
+Spots:
+  2
+3 1 4
+  P
+
+TODO:
+Need check (pin) validation later
+*/
+fn compute_white_pawn_incomplete(white_pawn: BitBoard, all_pieces: BitBoard, black_pieces: BitBoard) -> BitBoard {
+    let spot_1 = (white_pawn << 8) & !all_pieces;
+    
+    // If pawn can move 1 step into rank 3 and move another step
+    let spot_2 = ((spot_1 & MASK_RANK[2]) << 8) & !all_pieces;
+
+    // Attack spot 3, unless on file A and only if enemy piece is there
+    let spot_3 = ((white_pawn & CLEAR_FILE[0]) << 7) & black_pieces;
+
+    // Attack spot 4, unless on file H and only if enemy piece is there
+    let spot_4 = ((white_pawn & CLEAR_FILE[7]) << 9) & black_pieces;
+
+    let white_pawn_valid = spot_1 | spot_2 | spot_3 | spot_4;
+
+    white_pawn_valid
+}
+
+/*
+Compute Black Pawn valid moves (Incomplete) - Different for white
+Moving pawns to surrounding spots, masking with own pieces
+Using Clear file to avoid clipping edge
+
+Spots:
+  p
+3 1 4
+  2
+
+TODO:
+Need check (pin) validation later
+*/
+fn compute_black_pawn_incomplete(black_pawn: BitBoard, all_pieces: BitBoard, white_pieces: BitBoard) -> BitBoard {
+    let spot_1 = (black_pawn >> 8) & !all_pieces;
+    
+    // If pawn can move 1 step into rank 3 and move another step
+    let spot_2 = ((spot_1 & MASK_RANK[5]) >> 8) & !all_pieces;
+
+    // Attack spot 3, unless on file A and only if enemy piece is there
+    let spot_3 = ((black_pawn & CLEAR_FILE[0]) >> 9) & white_pieces;
+
+    // Attack spot 4, unless on file H and only if enemy piece is there
+    let spot_4 = ((black_pawn & CLEAR_FILE[7]) >> 7) & white_pieces;
+
+    let black_pawn_valid = spot_1 | spot_2 | spot_3 | spot_4;
+
+    black_pawn_valid
+}
+
+/*
+Compute the targets the bishop could possibly have not including edges
+
+*/
+fn compute_bishop_incomplete(bishop: BitBoard) -> BitBoard {
+    let mut attacks: BitBoard = 0;
+
+    let square = bit_scan(bishop);
+
+    // initialize target rank and files
+    let tr = square / 8;
+    let tf = square % 8;
+
+    // initialize ranks and files
+    let mut r = tr + 1;
+    let mut f = tf + 1;
+    
+    // mask bishops attack bits
+    // Up and right
+    while r <= 6 && f <= 6 {
+        attacks |= (1 as BitBoard) << (r * 8 + f);
+        r += 1;
+        f += 1;
+    }
+
+    if tf > 0 {
+        let mut r = tr + 1;
+        let mut f = tf - 1;
+        // Up and left
+        while r <= 6 && f >= 1 {
+            attacks |= (1 as BitBoard) << (r * 8 + f);
+            r += 1;
+            f -= 1;
+        }
+
+        if r > 0 {
+            let mut r = tr - 1;
+            let mut f = tf - 1;
+            // Down and left
+            while r >= 1 && tf >= 1 {
+                attacks |= (1 as BitBoard) << (r * 8 + f);
+                if r == 0 { break; }
+                if f == 0 { break; }
+                r -= 1;
+                f -= 1;
+            }           
+        }
+    }
+    if r > 0 {
+        let mut r = tr - 1;
+        let mut f = tf + 1;
+        // Down and right
+        while f <= 6 && r >= 1 {
+            attacks |= (1 as BitBoard) << (r * 8 + f);
+            if r == 0 { break; }
+            r -= 1;
+            f += 1;
+        }   
+    }
+    
+
+    attacks
+}
+
+/*
+Compute the targets a rook could possibly have not including edges
+
+*/
+fn compute_rook_incomplete(rook: BitBoard) -> BitBoard {
+    let square = bit_scan(rook);
+    let r = square / 8;
+    let f = square % 8;
+    
+    print!("{r} {f}\n");
+
+    let mut attacks = (MASK_RANK[r] | MASK_FILE[f]) ^ rook;
+    
+    // Do not include edge unless piece is on edge
+    let mut edges: BitBoard = 0;
+    if r != 0 {
+        edges |= MASK_RANK[0];
+    }
+    if r != 7 {
+        edges |= MASK_RANK[7];
+    }
+    if f != 0 {
+        edges |= MASK_FILE[0];
+    }
+    if f != 7 {
+        edges |= MASK_FILE[7];
+    }
+    // Remove edges
+    attacks &= !(edges);
+    
+    attacks
+
+}
 
 pub struct ChessBoard {
     /* All White Pieces */
@@ -200,6 +442,8 @@ impl ChessBoard {
             y += 1;
         }
 
+
+
         // Update the derived boards
         self.update_board();
     }
@@ -235,6 +479,13 @@ pub fn game () -> ChessBoard {
     chessboard.load("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string());
     chessboard.print_board(chessboard.all_pieces);
     
+    chessboard.print_board(compute_black_pawn_incomplete(chessboard.black_pawns, chessboard.all_pieces, chessboard.white_pieces));
+
+    print!("BISHOP!\n");
+    chessboard.print_board(compute_bishop_incomplete(PIECE[27]));
+
+    print!("ROOK\n");
+    chessboard.print_board(compute_rook_incomplete(PIECE[27]));
 
     chessboard
 }
@@ -252,6 +503,7 @@ mod tests {
         let mut chess: ChessBoard = game(); 
         chess.load("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1".to_string());
         chess.print_board(chess.all_pieces);
+        chess.print_board(compute_white_pawn_incomplete(PIECE[9], chess.all_pieces, chess.black_pieces));
 
         println!("Game Loaded!");
 
