@@ -3,8 +3,8 @@
 
 TODO:
 * Board representation
-* -     Currently: Vector of squares (Empty or -> Vector of pieces)
-* -     Future/Possibly -> 12 piece-types x 64 bit mask AKA bitboards
+* -     Currently -> 12 piece-types x 64 bit mask AKA bitboards + 3 useful bitboards (white-pieces, black-pieces, all-pieces)
+* -     Previously: Vector of squares (Empty or -> Vector of pieces)
 *
 * Game mechanics
 * D     Bit Scan (position of a bit)
@@ -45,8 +45,11 @@ TODO:
 */
 
 
-/*
+type BitBoard = u64;
 
+
+
+/*
 BitScan by modulo from:
 https://www.chessprogramming.org/BitScan
 
@@ -63,12 +66,224 @@ static MOD67: [usize; 67] = [
 6, 34, 33 
 ];
 
-pub fn bit_scan (bit: u64) -> usize {
+pub fn bit_scan (bit: BitBoard) -> usize {
     let remainder = (bit % 67) as usize;
     MOD67[remainder]
 }
 
+fn add_bit_at (pos: usize, bit: &mut BitBoard) {
+    *bit |= (1 as BitBoard) << pos;
+}
 
+/*
+fn remove_bit_at (pos: usize, bit: &mut BitBoard) {
+    *bit &= & ((1 << pos) as BitBoard - 1);
+}
+*/
+
+
+pub struct ChessBoard {
+    /* All White Pieces */
+    white_pawns: BitBoard,
+    white_knights: BitBoard,
+    white_bishops: BitBoard,
+    white_rooks: BitBoard,
+    white_queens: BitBoard,
+    white_kings: BitBoard,
+    
+    /* All Black Pieces */
+    black_pawns: BitBoard,
+    black_knights: BitBoard,
+    black_bishops: BitBoard,
+    black_rooks: BitBoard,
+    black_queens: BitBoard,
+    black_kings: BitBoard,
+
+    /* Derived Positions */
+    white_pieces: BitBoard,
+    black_pieces: BitBoard,
+    all_pieces: BitBoard,
+
+}
+
+impl Default for ChessBoard {
+    fn default() -> ChessBoard {
+        ChessBoard {
+            /* All White Pieces */
+            white_pawns: 0,
+            white_knights: 0,
+            white_bishops: 0,
+            white_rooks: 0,
+            white_queens: 0,
+            white_kings: 0,
+            
+            /* All Black Pieces */
+            black_pawns: 0,
+            black_knights: 0,
+            black_bishops: 0,
+            black_rooks: 0,
+            black_queens: 0,
+            black_kings: 0,
+        
+            /* Derived Positions */
+            white_pieces: 0,
+            black_pieces: 0,
+            all_pieces: 0,
+        }
+    }
+}
+
+impl ChessBoard {
+    /* Reset entire board to empty */ 
+    fn clear (&mut self) {
+        /* All White Pieces */
+        self.white_pawns = 0;
+        self.white_knights = 0;
+        self.white_bishops = 0;
+        self.white_rooks = 0;
+        self.white_queens = 0;
+        self.white_kings = 0;
+        
+        /* All Black Pieces */
+        self.black_pawns = 0;
+        self.black_knights = 0;
+        self.black_bishops = 0;
+        self.black_rooks = 0;
+        self.black_queens = 0;
+        self.black_kings = 0;
+    
+        /* Derived Positions */
+        self.white_pieces = 0;
+        self.black_pieces = 0;
+        self.all_pieces = 0;
+        
+    }
+    
+    fn load (&mut self, fen: String) {
+        // Clear the entire board
+        self.clear();
+
+        // Split FEN into different parts
+        let fen_vec: Vec<&str> = fen.split(" ").collect::<Vec<&str>>();
+
+        // Split FEN-position into a vec from bottom to top
+        let mut fen_rows: Vec<String> = fen_vec[0].split("/").map(|x| x.to_string()).collect();
+        fen_rows.reverse();
+
+
+        // Iterate through the FEN position, keeping track of position
+        let mut y: usize = 0;
+        for row in fen_rows.iter() {
+            let mut x: usize = 0;
+            let row_char: Vec<char> = row.chars().collect();
+
+            for s in row_char.iter() {
+                let pos = y*8+x;
+                
+                /*
+                TODO!!
+                Implement safe-guard system for bad FEN strings, (check chars and such)
+                 */ 
+
+                match s {   
+                    /* Add Black Piece from FEN */
+                    'p' => add_bit_at(pos, &mut self.black_pawns),
+                    'n' => add_bit_at(pos, &mut self.black_knights),
+                    'b' => add_bit_at(pos, &mut self.black_bishops),
+                    'r' => add_bit_at(pos, &mut self.black_rooks),
+                    'q' => add_bit_at(pos, &mut self.black_queens),
+                    'k' => add_bit_at(pos, &mut self.black_kings),
+                    /* Add Whtie Piece from FEN */
+                    'P' => add_bit_at(pos, &mut self.white_pawns),
+                    'N' => add_bit_at(pos, &mut self.white_knights),
+                    'B' => add_bit_at(pos, &mut self.white_bishops),
+                    'R' => add_bit_at(pos, &mut self.white_rooks),
+                    'Q' => add_bit_at(pos, &mut self.white_queens),
+                    'K' => add_bit_at(pos, &mut self.white_kings),
+                    /* Read amount of empty space from FEN */
+                    _ => x += (*s as usize) - ('0') as usize - 1
+                }
+                x += 1;
+            }
+            y += 1;
+        }
+
+        // Update the derived boards
+        self.update_board();
+    }
+
+    // Updates the derived boards
+    fn update_board (&mut self) {
+        self.white_pieces = self.white_pawns | self.white_knights | self.white_bishops | self.white_rooks | self.white_queens | self.white_kings;
+        self.black_pieces = self.black_pawns | self.black_knights | self.black_bishops | self.black_rooks | self.black_queens | self.black_kings;
+        self.all_pieces = self.white_pieces | self.black_pieces;
+    }
+
+    // Prints the board
+    fn print_board (&self) {
+        print!("\n------------------\nAll Pieces: \n");
+        for y in (0..8).rev() {
+            for x in 0..8 {
+                let bitval: BitBoard = (1 as BitBoard) << (y*8 + x);
+                if self.all_pieces & bitval == bitval {
+                    print!("1 ");
+                }
+                else {
+                    print!("0 ");
+                }
+            }
+            print!("\n");
+        }
+    }
+}
+
+pub fn game () -> ChessBoard {
+    let mut chessboard = ChessBoard { ..Default::default() };
+    chessboard.load("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string());
+    chessboard.print_board();
+    
+    
+    chessboard
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn it_works() {
+        let result = 2 + 2;
+        
+        //let mut game: Game = new_game();
+        let mut chess: ChessBoard = game(); 
+        chess.load("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1".to_string());
+        chess.print_board();
+
+        println!("Game Loaded!");
+
+        assert_eq!(result, 4);
+    }
+
+    #[test]
+    fn bit_scan_test(){
+
+        /*
+        Unit test bit scan
+
+        Add a bit to an empty BitBoard
+        Use bit_scan to find where the bit is
+        Compare the input to the output
+        */
+        for i in 0..63 as usize{
+            let bb: BitBoard = (1 as BitBoard) << i;
+            let res: usize = bit_scan(bb);
+            assert_eq!(i, res, " testing the bit_scan at bit {i} ");
+        }
+    }
+}
+
+/*
 #[derive(Debug, PartialEq)]
 enum PieceType {
     Pawn,
@@ -275,3 +490,5 @@ mod tests {
         assert_eq!(result, 4);
     }
 }
+
+*/
