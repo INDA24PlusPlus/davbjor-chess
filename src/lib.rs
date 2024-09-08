@@ -231,53 +231,74 @@ fn compute_bishop_incomplete(bishop: BitBoard) -> BitBoard {
     let tr = square / 8;
     let tf = square % 8;
 
-    // initialize ranks and files
-    let mut r = tr + 1;
-    let mut f = tf + 1;
-    
-    // mask bishops attack bits
     // Up and right
-    while r <= 6 && f <= 6 {
+    for (r, f) in ((tr+1)..8).zip((tf+1)..8) {
         attacks |= (1 as BitBoard) << (r * 8 + f);
-        r += 1;
-        f += 1;
     }
 
-    if tf > 0 {
-        let mut r = tr + 1;
-        let mut f = tf - 1;
-        // Up and left
-        while r <= 6 && f >= 1 {
-            attacks |= (1 as BitBoard) << (r * 8 + f);
-            r += 1;
-            f -= 1;
-        }
+    // Up and left
+    for (r, f) in ((tr+1)..8).zip((0..tf).rev()) {
+        attacks |= (1 as BitBoard) << (r * 8 + f);
+    }
 
-        if r > 0 {
-            let mut r = tr - 1;
-            let mut f = tf - 1;
-            // Down and left
-            while r >= 1 && tf >= 1 {
-                attacks |= (1 as BitBoard) << (r * 8 + f);
-                if r == 0 { break; }
-                if f == 0 { break; }
-                r -= 1;
-                f -= 1;
-            }           
-        }
+    // Down and left
+    for (r, f) in ((0..tr).rev()).zip((0..tf).rev()) {
+        attacks |= (1 as BitBoard) << (r * 8 + f);
     }
-    if r > 0 {
-        let mut r = tr - 1;
-        let mut f = tf + 1;
-        // Down and right
-        while f <= 6 && r >= 1 {
-            attacks |= (1 as BitBoard) << (r * 8 + f);
-            if r == 0 { break; }
-            r -= 1;
-            f += 1;
-        }   
+
+    // Down and right
+    for (r, f) in ((0..tr).rev()).zip((tf+1)..8) {
+        attacks |= (1 as BitBoard) << (r * 8 + f);
     }
-    
+
+    attacks
+}
+
+
+/*
+Compute the targets the bishop could possibly have, (targets could be of own color)
+
+*/
+fn compute_bishop_on_the_fly_incomplete(bishop: BitBoard, all_pieces: BitBoard) -> BitBoard {
+    let mut attacks: BitBoard = 0;
+
+    let square = bit_scan(bishop);
+
+    // initialize target rank and files
+    let tr = square / 8;
+    let tf = square % 8;
+
+    // Up and right
+    for (r, f) in ((tr+1)..8).zip((tf+1)..8) {
+        let b = (1 as BitBoard) << (r * 8 + f);
+        attacks |= b;
+        // Detect if piece is in the path of bishop
+        if all_pieces & b == b { break; }
+    }
+
+    // Up and left
+    for (r, f) in ((tr+1)..8).zip((0..tf).rev()) {
+        let b = (1 as BitBoard) << (r * 8 + f);
+        attacks |= b;
+        // Detect if piece is in the path of bishop
+        if all_pieces & b == b { break; }
+    }
+
+    // Down and left
+    for (r, f) in ((0..tr).rev()).zip((0..tf).rev()) {
+        let b = (1 as BitBoard) << (r * 8 + f);
+        attacks |= b;
+        // Detect if piece is in the path of bishop
+        if all_pieces & b == b { break; }
+    }
+
+    // Down and right
+    for (r, f) in ((0..tr).rev()).zip((tf+1)..8) {
+        let b = (1 as BitBoard) << (r * 8 + f);
+        attacks |= b;
+        // Detect if piece is in the path of bishop
+        if all_pieces & b == b { break; }
+    }
 
     attacks
 }
@@ -287,33 +308,63 @@ Compute the targets a rook could possibly have not including edges
 
 */
 fn compute_rook_incomplete(rook: BitBoard) -> BitBoard {
+    let mut attacks: BitBoard = 0;
     let square = bit_scan(rook);
-    let r = square / 8;
-    let f = square % 8;
+    let tr = square / 8;
+    let tf = square % 8;
     
-    print!("{r} {f}\n");
-
-    let mut attacks = (MASK_RANK[r] | MASK_FILE[f]) ^ rook;
-    
-    // Do not include edge unless piece is on edge
-    let mut edges: BitBoard = 0;
-    if r != 0 {
-        edges |= MASK_RANK[0];
+    for r in (tr+1)..7 {
+        attacks |= (1 as BitBoard) << (r * 8 + tf);
     }
-    if r != 7 {
-        edges |= MASK_RANK[7];
+    for r in (1..tr).rev() {
+        attacks |= (1 as BitBoard) << (r * 8 + tf);
     }
-    if f != 0 {
-        edges |= MASK_FILE[0];
+    for f in (tf+1)..7 {
+        attacks |= (1 as BitBoard) << (tr * 8 + f);
     }
-    if f != 7 {
-        edges |= MASK_FILE[7];
+    for f in (1..tf).rev() {
+        attacks |= (1 as BitBoard) << (tr * 8 + f);
     }
-    // Remove edges
-    attacks &= !(edges);
     
     attacks
+}
 
+/*
+Compute the targets a rook could attack, (could be target of own color)
+
+*/
+fn compute_rook_on_the_fly_incomplete(rook: BitBoard, all_pieces: BitBoard) -> BitBoard {
+    let mut attacks: BitBoard = 0;
+    let square = bit_scan(rook);
+    let tr = square / 8;
+    let tf = square % 8;
+    
+    for r in (tr+1)..8 {
+        let b = (1 as BitBoard) << (r * 8 + tf);
+        attacks |= b;
+        // Detect if piece is in the path of rook
+        if all_pieces & b == b { break; }
+    }
+    for r in (0..tr).rev() {
+        let b = (1 as BitBoard) << (r * 8 + tf);
+        attacks |= b;
+        // Detect if piece is in the path of rook
+        if all_pieces & b == b { break; }
+    }
+    for f in (tf+1)..8 {
+        let b = (1 as BitBoard) << (tr * 8 + f);
+        attacks |= b;
+        // Detect if piece is in the path of rook
+        if all_pieces & b == b { break; }
+    }
+    for f in (0..tf).rev() {
+        let b = (1 as BitBoard) << (tr * 8 + f);
+        attacks |= b;
+        // Detect if piece is in the path of rook
+        if all_pieces & b == b { break; }
+    }
+    
+    attacks
 }
 
 pub struct ChessBoard {
@@ -477,15 +528,12 @@ impl ChessBoard {
 pub fn game () -> ChessBoard {
     let mut chessboard = ChessBoard { ..Default::default() };
     chessboard.load("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string());
-    chessboard.print_board(chessboard.all_pieces);
     
-    chessboard.print_board(compute_black_pawn_incomplete(chessboard.black_pawns, chessboard.all_pieces, chessboard.white_pieces));
-
     print!("BISHOP!\n");
-    chessboard.print_board(compute_bishop_incomplete(PIECE[27]));
+    chessboard.print_board(compute_bishop_on_the_fly_incomplete(PIECE[27], chessboard.all_pieces));
 
     print!("ROOK\n");
-    chessboard.print_board(compute_rook_incomplete(PIECE[27]));
+    chessboard.print_board(compute_rook_on_the_fly_incomplete(PIECE[27], chessboard.all_pieces));
 
     chessboard
 }
@@ -503,7 +551,8 @@ mod tests {
         let mut chess: ChessBoard = game(); 
         chess.load("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1".to_string());
         chess.print_board(chess.all_pieces);
-        chess.print_board(compute_white_pawn_incomplete(PIECE[9], chess.all_pieces, chess.black_pieces));
+
+        chess.print_board(compute_rook_on_the_fly_incomplete(PIECE[27], chess.all_pieces));
 
         println!("Game Loaded!");
 
