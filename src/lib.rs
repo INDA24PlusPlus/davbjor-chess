@@ -1,9 +1,15 @@
 mod lookup;
-use crate::lookup::tables::{MASK_RANK, CLEAR_RANK, MASK_FILE, CLEAR_FILE, PIECE};
+
+use crate::lookup::tables::{MASK_RANK, CLEAR_RANK, MASK_FILE, CLEAR_FILE, PIECE, SQUARE};
 
 /*
 
 TODO:
+
+Problem right now -> on capture -> two pieces on the same square !!!
+
+Need a better way to do things differently for the different piece types, 12 if statements are ugly!
+
 * Board representation
 * -     Currently -> 12 piece-types x 64 bit mask AKA bitboards + 3 useful bitboards (white-pieces, black-pieces, all-pieces)
 * -     Previously: Vector of squares (Empty or -> Vector of pieces)
@@ -374,6 +380,53 @@ fn compute_rook_attacks(rook: BitBoard, all_pieces: BitBoard, enemy_pieces: BitB
 }
 
 
+// Prints the board
+fn print_board (board: BitBoard) {
+    print!("\n");
+    for y in (0..8).rev() {
+        for x in 0..8 {
+            let bitval: BitBoard = (1 as BitBoard) << (y*8 + x);
+            if board & bitval == bitval {
+                print!("1 ");
+            }
+            else {
+                print!("0 ");
+            }
+        }
+        print!("\n");
+    }
+    print!("---------------\n");
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum PieceType {
+    WhitePawn,
+    WhiteKnight,
+    WhiteBishop,
+    WhiteRook,
+    WhiteQueen,
+    WhiteKing,
+    BlackPawn,
+    BlackKnight,
+    BlackBishop,
+    BlackRook,
+    BlackQueen,
+    BlackKing,
+    Other
+}
+
+fn is_white(piece: PieceType) -> bool {
+    return match piece {
+        PieceType::WhitePawn => true,
+        PieceType::WhiteKnight => true,
+        PieceType::WhiteBishop => true,
+        PieceType::WhiteRook => true,
+        PieceType::WhiteQueen => true,
+        PieceType::WhiteKing => true,
+        _ => false
+    }
+}
+
 pub struct ChessBoard {
     /* All White Pieces */
     white_pawns: BitBoard,
@@ -456,18 +509,34 @@ impl ChessBoard {
     Combine all attack patterns into one attack function, that returns a bitboard of every square currently attacked by one side.
     Note - pieces may be pinned yet can still attack a square - ex. Bishop could be pinned down on A2, By a rook on A3 when king is on A1 -> Still attacks B3,C4... and could check the other king
     */
-    fn compute_white_attacks (&self) -> BitBoard {
+    fn compute_white_attacks (&self, black_pieces_option: Option<BitBoard>, white_pieces_option: Option<BitBoard>) -> BitBoard {
+        let black_pieces;
+        let white_pieces;
+        match black_pieces_option {
+            Some(bb) => black_pieces = bb,
+            None => black_pieces = self.black_pieces
+        }
+        match white_pieces_option {
+            Some(bb) => white_pieces = bb,
+            None => white_pieces = self.white_pieces
+        }
+        let all_pieces = black_pieces | white_pieces;
+        
         let mut attacks: BitBoard = 0;
-        attacks |= compute_white_pawn_attacks(self.white_pawns, self.black_pieces);
+        attacks |= compute_white_pawn_attacks(self.white_pawns, black_pieces);
         attacks |= compute_knight_attacks(self.white_knights, self.white_pieces);
-        attacks |= compute_king_attacks(self.white_kings, self.white_pieces);
+        attacks |= compute_king_attacks(self.white_kings, white_pieces);
 
         for i in 0..63 {
             if self.white_bishops & PIECE[i] != 0{
-                attacks |= compute_bishop_attacks(PIECE[i], self.all_pieces, self.black_pieces);
+                attacks |= compute_bishop_attacks(PIECE[i], white_pieces, black_pieces);
             }
             if self.white_rooks & PIECE[i] != 0 {
-                attacks |= compute_rook_attacks(PIECE[i], self.all_pieces, self.black_pieces);
+                attacks |= compute_rook_attacks(PIECE[i], white_pieces, black_pieces);
+            }
+            if self.white_queens & PIECE[i] != 0{
+                attacks |= compute_bishop_attacks(PIECE[i], white_pieces, black_pieces);
+                attacks |= compute_rook_attacks(PIECE[i], white_pieces, black_pieces);
             }
         }
 
@@ -478,18 +547,34 @@ impl ChessBoard {
     Combine all attack patterns into one attack function, that returns a bitboard of every square currently attacked by one side.
     Note - pieces may be pinned yet can still attack a square - ex. Bishop could be pinned down on A2, By a rook on A3 when king is on A1 -> Still attacks B3,C4... and could check the other king
     */
-    fn compute_black_attacks (&self) -> BitBoard {
+    fn compute_black_attacks (&self, black_pieces_option: Option<BitBoard>, white_pieces_option: Option<BitBoard>) -> BitBoard {
+        let black_pieces;
+        let white_pieces;
+        match black_pieces_option {
+            Some(bb) => black_pieces = bb,
+            None => black_pieces = self.black_pieces
+        }
+        match white_pieces_option {
+            Some(bb) => white_pieces = bb,
+            None => white_pieces = self.white_pieces
+        }
+        let all_pieces = black_pieces | white_pieces;
+
         let mut attacks: BitBoard = 0;
-        attacks |= compute_black_pawn_attacks(self.black_pawns, self.white_pieces);
-        attacks |= compute_knight_attacks(self.black_knights, self.black_pieces);
-        attacks |= compute_king_attacks(self.black_kings, self.black_pieces);
+        attacks |= compute_black_pawn_attacks(self.black_pawns, white_pieces);
+        attacks |= compute_knight_attacks(self.black_knights, black_pieces);
+        attacks |= compute_king_attacks(self.black_kings, black_pieces);
 
         for i in 0..63 {
             if self.black_bishops & PIECE[i] != 0{
-                attacks |= compute_bishop_attacks(PIECE[i], self.all_pieces, self.white_pieces);
+                attacks |= compute_bishop_attacks(PIECE[i], all_pieces, white_pieces);
             }
             if self.black_rooks & PIECE[i] != 0 {
-                attacks |= compute_rook_attacks(PIECE[i], self.all_pieces, self.white_pieces);
+                attacks |= compute_rook_attacks(PIECE[i], all_pieces, white_pieces);
+            }
+            if self.black_queens & PIECE[i] != 0{
+                attacks |= compute_bishop_attacks(PIECE[i], all_pieces, white_pieces);
+                attacks |= compute_rook_attacks(PIECE[i], all_pieces, white_pieces);
             }
         }
 
@@ -500,19 +585,45 @@ impl ChessBoard {
     Function test whether white in check
     */
     fn white_in_check (&self) -> bool {
-        let black_attacks: BitBoard = self.compute_black_attacks();
+        let black_attacks: BitBoard = self.compute_black_attacks(None, None);
 
-        return PIECE[bit_scan(self.white_kings)] & black_attacks != 0;
+        PIECE[bit_scan(self.white_kings)] & black_attacks != 0
+    }
+    /*
+    Function test whether white in check
+    */
+    fn white_in_check_mut (&self, black_attacks: BitBoard) -> bool {
+        PIECE[bit_scan(self.white_kings)] & black_attacks != 0
+    }
+    /*
+    Function test whether white in check
+    */
+    fn white_in_check_king (&self, black_attacks: BitBoard, white_kings: BitBoard) -> bool {
+        PIECE[bit_scan(white_kings)] & black_attacks != 0
     }
 
     /*
     Function test whether black in check
     */
     fn black_in_check (&self) -> bool {
-        let white_attacks: BitBoard = self.compute_white_attacks();
+        let white_attacks: BitBoard = self.compute_white_attacks(None, None);
 
-        return PIECE[bit_scan(self.black_kings)] & white_attacks != 0;
+        PIECE[bit_scan(self.black_kings)] & white_attacks != 0
     }
+    
+    /*
+    Function test whether black in check
+    */
+    fn black_in_check_mut (&self, white_attacks: BitBoard) -> bool {
+        PIECE[bit_scan(self.black_kings)] & white_attacks != 0
+    }
+    /*
+    Function test whether black in check
+    */
+    fn black_in_check_king (&self, white_attacks: BitBoard, black_kings: BitBoard) -> bool {
+        PIECE[bit_scan(black_kings)] & white_attacks != 0
+    }
+
 
     /*
     Get BitBoard of possible moves a piece
@@ -522,99 +633,112 @@ impl ChessBoard {
         let piece_type = self.piece_at(square);
 
         // NEEDS CHECK SAFEGUARD FROM CHECK IMPLEMENTATION (pinned pieces)
-        
-        // Piece is white
-        if ((1 as BitBoard) << 6) & piece_type != 0 { 
-            println!("WHITE");
-            // King
-            if ((1 as BitBoard) << 5) & piece_type != 0 {
-                moves |= compute_king_attacks(square, self.white_pieces);
-            }
 
-            // Queen
-            if ((1 as BitBoard) << 4) & piece_type != 0 {
-                moves |= compute_rook_attacks(square, self.all_pieces, self.black_pieces);
-                moves |= compute_bishop_attacks(square, self.all_pieces, self.black_pieces);
-            }
-            // Rook
-            if ((1 as BitBoard) << 3) & piece_type != 0 {
-                moves |= compute_rook_attacks(square, self.all_pieces, self.black_pieces);
-            }
-            // Bishop
-            if ((1 as BitBoard) << 2) & piece_type != 0 {
-                moves |= compute_bishop_attacks(square, self.all_pieces, self.black_pieces);
-            }
-            // Knight
-            if ((1 as BitBoard) << 1) & piece_type != 0 {
-                moves |= compute_knight_attacks(square, self.white_pieces);
-            }
-            // Pawn
-            if (1 as BitBoard) & piece_type != 0 {
-                moves |= compute_white_pawn_moves(square, self.all_pieces, self.black_pieces); 
+        match piece_type {
+            PieceType::WhiteKing =>     moves |= compute_king_attacks(square, self.white_pieces),
+            PieceType::WhiteQueen =>    moves |= compute_rook_attacks(square, self.all_pieces, self.black_pieces)
+                                            | compute_bishop_attacks(square, self.all_pieces, self.black_pieces),
+            PieceType::WhiteRook =>     moves |= compute_rook_attacks(square, self.all_pieces, self.black_pieces),
+            PieceType::WhiteBishop =>   moves |= compute_bishop_attacks(square, self.all_pieces, self.black_pieces),
+            PieceType::WhiteKnight =>   moves |= compute_knight_attacks(square, self.white_pieces),
+            PieceType::WhitePawn =>     moves |= compute_white_pawn_moves(square, self.all_pieces, self.black_pieces),
+            PieceType::BlackKing =>     moves |= compute_king_attacks(square, self.black_pieces),
+            PieceType::BlackQueen =>    moves |= compute_rook_attacks(square, self.all_pieces, self.white_pieces)
+                                            | compute_bishop_attacks(square, self.all_pieces, self.white_pieces),
+            PieceType::BlackRook =>     moves |= compute_rook_attacks(square, self.all_pieces, self.white_pieces),
+            PieceType::BlackBishop =>   moves |= compute_bishop_attacks(square, self.all_pieces, self.white_pieces),
+            PieceType::BlackKnight =>   moves |= compute_knight_attacks(square, self.black_pieces),
+            PieceType::BlackPawn =>     moves |= compute_black_pawn_moves(square, self.all_pieces, self.white_pieces),
+            _ => moves = 0
+        }
+
+        let is_white: bool = is_white(piece_type);
+
+        if piece_type != PieceType::WhiteKing && piece_type != PieceType::BlackKing {
+            for i in 0..63 {
+                if moves & PIECE[i] != 0 {
+                    if is_white {
+                        if self.white_in_check_mut(self.compute_black_attacks(Some(self.black_pieces), Some(self.white_pieces & !square | PIECE[i]))) {
+                            moves &= !PIECE[i];
+                        }
+                    } else {
+                        if self.black_in_check_mut(self.compute_white_attacks(Some(self.black_pieces & !square | PIECE[i]), Some(self.white_pieces))) {
+                            moves &= !PIECE[i];
+                        }
+                    }
+                }
             }
         }
         else {
-            println!("BLACK");
-            // King
-            if ((1 as BitBoard) << 5) & piece_type != 0 {
-                moves |= compute_king_attacks(square, self.black_pieces);
+            for i in 0..63 {
+                if moves & PIECE[i] != 0 {
+                    if is_white {
+                        if self.white_in_check_king(self.compute_black_attacks(Some(self.black_pieces), Some(self.white_pieces & !square | PIECE[i])), PIECE[i]) {
+                            moves &= !PIECE[i];
+                        }
+                    } else {
+                        if self.black_in_check_king(self.compute_white_attacks(Some(self.black_pieces & !square | PIECE[i]), Some(self.white_pieces)), PIECE[i]) {
+                            moves &= !PIECE[i];
+                        }
+                    }
+                }
             }
-
-            // Queen
-            if ((1 as BitBoard) << 4) & piece_type != 0 {
-                moves |= compute_rook_attacks(square, self.all_pieces, self.white_pieces);
-                moves |= compute_bishop_attacks(square, self.all_pieces, self.white_pieces);
-            }
-            // Rook
-            if ((1 as BitBoard) << 3) & piece_type != 0 {
-                moves |= compute_rook_attacks(square, self.all_pieces, self.white_pieces);
-            }
-            // Bishop
-            if ((1 as BitBoard) << 2) & piece_type != 0 {
-                moves |= compute_bishop_attacks(square, self.all_pieces, self.white_pieces);
-            }
-            // Knight
-            if ((1 as BitBoard) << 1) & piece_type != 0 {
-                moves |= compute_knight_attacks(square, self.black_pieces);
-            }
-            // Pawn
-            if (1 as BitBoard) & piece_type != 0 {
-                moves |= compute_black_pawn_moves(square, self.all_pieces, self.white_pieces); 
-            }
-
         }
-         
+
+        
+        
         moves
     }
 
-    fn piece_at (&self, square: BitBoard) -> BitBoard {
-        let mut piece = 0;
-        
-        if self.white_pieces & square != 0 {
-            piece |= (1 as BitBoard) << 6;
-        }
-        if (self.white_kings | self.black_kings) & square != 0 {
-            piece |= (1 as BitBoard) << 5;
-        }
-        if (self.white_queens | self.black_queens) & square != 0 {
-            piece |= (1 as BitBoard) << 4;
-        }
-        if (self.white_rooks | self.black_rooks) & square != 0 {
-            piece |= (1 as BitBoard) << 3;
-        }
-        if (self.white_knights | self.black_knights) & square != 0 {
-            piece |= (1 as BitBoard) << 2;
-        }
-        if (self.white_bishops | self.black_bishops) & square != 0 {
-            piece |= (1 as BitBoard) << 1;
-        }
-        if (self.white_pawns | self.black_pawns) & square != 0 {
-            piece |= 1 as BitBoard;
-        }
+    fn piece_at (&self, square: BitBoard) -> PieceType {
+        if self.white_pawns & square != 0 { return PieceType::WhitePawn; }
+        if self.black_pawns & square != 0 { return PieceType::BlackPawn; }
+        if self.white_knights & square != 0 { return PieceType::WhiteKnight; }
+        if self.black_knights & square != 0 { return PieceType::BlackKnight; }
+        if self.white_bishops & square != 0 { return PieceType::WhiteBishop; }
+        if self.black_bishops & square != 0 { return PieceType::BlackBishop; }
+        if self.white_rooks & square != 0 { return PieceType::WhiteRook; }
+        if self.black_rooks & square != 0 { return PieceType::BlackRook; }
+        if self.white_queens & square != 0 { return PieceType::WhiteQueen; }
+        if self.black_queens & square != 0 { return PieceType::BlackQueen; }
+        if self.white_kings & square != 0 { return PieceType::WhiteKing; }
+        if self.black_kings & square != 0 { return PieceType::BlackKing; }
 
-        piece
+        PieceType::Other
     }
 
+    fn move_piece (&mut self, from: usize, to: usize) -> bool {
+        // if piece doesn't exist
+        if self.all_pieces & PIECE[from] == 0 { return false; }
+
+        let mut moves = self.get_moves(PIECE[from]);
+
+        // break if piece cant move to desired position
+        if moves == 0 { return false; }
+        if moves & PIECE[to] == 0 { return false; }
+
+        let piece_type: PieceType = self.piece_at(PIECE[from]);
+        
+        match piece_type {
+            PieceType::WhiteKing => { self.white_kings &= !PIECE[from]; self.white_kings |= PIECE[to]; },
+            PieceType::WhiteQueen => { self.white_queens &= !PIECE[from]; self.white_queens |= PIECE[to]; },
+            PieceType::WhiteRook => { self.white_rooks &= !PIECE[from]; self.white_rooks |= PIECE[to]; },
+            PieceType::WhiteBishop => { self.white_bishops &= !PIECE[from]; self.white_bishops |= PIECE[to]; },
+            PieceType::WhiteKnight => { self.white_knights &= !PIECE[from]; self.white_knights |= PIECE[to]; },
+            PieceType::WhitePawn => { self.white_pawns &= !PIECE[from]; self.white_pawns |= PIECE[to]; },
+            PieceType::BlackKing => { self.black_kings &= !PIECE[from]; self.black_kings |= PIECE[to]; },
+            PieceType::BlackQueen => { self.black_queens &= !PIECE[from]; self.black_queens |= PIECE[to]; },
+            PieceType::BlackRook => { self.black_rooks &= !PIECE[from]; self.black_rooks |= PIECE[to]; },
+            PieceType::BlackBishop => { self.black_bishops &= !PIECE[from]; self.black_bishops |= PIECE[to]; },
+            PieceType::BlackKnight => { self.black_knights &= !PIECE[from]; self.black_knights |= PIECE[to]; },
+            PieceType::BlackPawn => { self.black_pawns &= !PIECE[from]; self.black_pawns |= PIECE[to]; },
+            _ => panic!("No Piece Type")
+        }
+
+        self.update_board();
+
+        true
+    }
     
     
     fn load (&mut self, fen: String) {
@@ -666,8 +790,6 @@ impl ChessBoard {
             y += 1;
         }
 
-
-
         // Update the derived boards
         self.update_board();
     }
@@ -679,44 +801,45 @@ impl ChessBoard {
         self.all_pieces = self.white_pieces | self.black_pieces;
     }
 
-    // Prints the board
-    fn print_board (&self, board: BitBoard) {
+
+    pub fn reset (&mut self) {
+        self.load("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string());
+    }
+
+    fn print_board(&self, b: BitBoard){
         print!("\n");
         for y in (0..8).rev() {
             for x in 0..8 {
                 let bitval: BitBoard = (1 as BitBoard) << (y*8 + x);
-                if board & bitval == bitval {
-                    print!("1 ");
+                if self.all_pieces & bitval != 0 {
+                    if self.black_pawns & bitval != 0 { print!("p "); }
+                    if self.black_knights & bitval != 0 { print!("n "); }
+                    if self.black_bishops & bitval != 0 { print!("b "); }
+                    if self.black_rooks & bitval != 0 { print!("r "); }
+                    if self.black_queens & bitval != 0 { print!("q "); }
+                    if self.black_kings & bitval != 0 { print!("k "); }
+
+                    if self.white_pawns & bitval != 0 { print!("P "); }
+                    if self.white_knights & bitval != 0 { print!("N "); }
+                    if self.white_bishops & bitval != 0 { print!("B "); }
+                    if self.white_rooks & bitval != 0 { print!("R "); }
+                    if self.white_queens & bitval != 0 { print!("Q "); }
+                    if self.white_kings & bitval != 0 { print!("K "); }
                 }
                 else {
-                    print!("0 ");
+                    if b & bitval != 0 { print!("1 ");  }
+                    else { print!(". "); }
                 }
             }
             print!("\n");
         }
         print!("---------------\n");
     }
-
-    pub fn initialize (&mut self) {
-        self.load("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string());
-    }
 }
 
 pub fn game () -> ChessBoard {
     let mut chessboard = ChessBoard { ..Default::default() };
-    chessboard.initialize();
-
-    chessboard.load("2k5/8/4q3/8/6b1/1n6/1PPP4/3KR3".to_string());
-    chessboard.print_board(chessboard.all_pieces);
-    print!("\nWhite in check = {} \n Black in check = {}\n", chessboard.white_in_check(), chessboard.black_in_check());
-
-    /*
-    for i in 0..63 {
-        if chessboard.all_pieces & PIECE[i] != 0{
-            print!("{} {}", i/8, i%8);
-            chessboard.print_board(chessboard.get_moves(PIECE[i]));
-        }
-    }*/
+    chessboard.reset();
 
     chessboard
 }
@@ -728,32 +851,50 @@ mod tests {
     
     #[test]
     fn it_works() {
-        let result = 2 + 2;
-        
-        //let mut game: Game = new_game();
         let mut chess: ChessBoard = game(); 
-        chess.load("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1".to_string());
-        //chess.print_board(chess.all_pieces);
-
         println!("Game Loaded!");
 
-        assert_eq!(result, 4);
+        chess.print_board(0);
+
+        chess.move_piece(SQUARE::E2 as usize,SQUARE::E4 as usize);
+        chess.print_board(0);
+
+        chess.move_piece(SQUARE::E7 as usize,SQUARE::E5 as usize);
+        chess.print_board(0);
+
+        chess.move_piece(SQUARE::F1 as usize,SQUARE::C4 as usize);
+        chess.print_board(0);
+        
+        chess.move_piece(SQUARE::A7 as usize,SQUARE::A6 as usize);
+        chess.print_board(0);
+
+        chess.move_piece(SQUARE::C4 as usize,SQUARE::F7 as usize);
+        chess.print_board(0);
+        
+        assert_eq!(bit_count(chess.all_pieces),32);
     }
 
     #[test]
-    fn bit_scan_test(){
+    fn test_possible_moves() {
+        // POS where white is in check
+        let mut chess: ChessBoard = game(); 
+        chess.load("2k5/8/4q3/8/6b1/1n6/1PPP4/3KR3".to_string());
 
+        //chess.print_board(chess.compute_black_attacks(None, None));
+
+        //println!("White in check = {}", chess.white_in_check());
+        //println!("Black in check = {}", chess.black_in_check());
         /*
-        Unit test bit scan
+        for i in 0..63 {
+            if chess.white_pieces & PIECE[i] != 0 {
+                let moves = chess.get_moves(PIECE[i]);
+                if moves != 0 {
+                    println!("{} {}", i / 8, i % 8);
+                    chess.print_board(moves);
+                } 
+            }
+        }*/
 
-        Add a bit to an empty BitBoard
-        Use bit_scan to find where the bit is
-        Compare the input to the output
-        */
-        for i in 0..63 as usize{
-            let bb: BitBoard = (1 as BitBoard) << i;
-            let res: usize = bit_scan(bb);
-            assert_eq!(i, res, " testing the bit_scan at bit {i} ");
-        }
+        //chess.print_board(0);
     }
 }
