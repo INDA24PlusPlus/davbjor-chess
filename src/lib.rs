@@ -719,25 +719,57 @@ impl ChessBoard {
 
         let piece_type: PieceType = self.piece_at(PIECE[from]);
         
-        match piece_type {
-            PieceType::WhiteKing => { self.white_kings &= !PIECE[from]; self.white_kings |= PIECE[to]; },
-            PieceType::WhiteQueen => { self.white_queens &= !PIECE[from]; self.white_queens |= PIECE[to]; },
-            PieceType::WhiteRook => { self.white_rooks &= !PIECE[from]; self.white_rooks |= PIECE[to]; },
-            PieceType::WhiteBishop => { self.white_bishops &= !PIECE[from]; self.white_bishops |= PIECE[to]; },
-            PieceType::WhiteKnight => { self.white_knights &= !PIECE[from]; self.white_knights |= PIECE[to]; },
-            PieceType::WhitePawn => { self.white_pawns &= !PIECE[from]; self.white_pawns |= PIECE[to]; },
-            PieceType::BlackKing => { self.black_kings &= !PIECE[from]; self.black_kings |= PIECE[to]; },
-            PieceType::BlackQueen => { self.black_queens &= !PIECE[from]; self.black_queens |= PIECE[to]; },
-            PieceType::BlackRook => { self.black_rooks &= !PIECE[from]; self.black_rooks |= PIECE[to]; },
-            PieceType::BlackBishop => { self.black_bishops &= !PIECE[from]; self.black_bishops |= PIECE[to]; },
-            PieceType::BlackKnight => { self.black_knights &= !PIECE[from]; self.black_knights |= PIECE[to]; },
-            PieceType::BlackPawn => { self.black_pawns &= !PIECE[from]; self.black_pawns |= PIECE[to]; },
-            _ => panic!("No Piece Type")
-        }
+
+        self.update_board_after_move(piece_type, from, to);
 
         self.update_board();
 
         true
+    }
+
+    fn update_board_after_move (&mut self, piece_type: PieceType, from: usize, to: usize) {
+        self.white_pawns &= !PIECE[to];
+        self.white_knights &= !PIECE[to];
+        self.white_bishops &= !PIECE[to];
+        self.white_rooks &= !PIECE[to];
+        self.white_queens &= !PIECE[to];
+        self.white_kings &= !PIECE[to];
+        self.black_pawns &= !PIECE[to];
+        self.black_knights &= !PIECE[to];
+        self.black_bishops &= !PIECE[to];
+        self.black_rooks &= !PIECE[to];
+        self.black_queens &= !PIECE[to];
+        self.black_kings &= !PIECE[to];
+
+        self.white_pawns &= !PIECE[from];
+        self.white_knights &= !PIECE[from];
+        self.white_bishops &= !PIECE[from];
+        self.white_rooks &= !PIECE[from];
+        self.white_queens &= !PIECE[from];
+        self.white_kings &= !PIECE[from];
+        self.black_pawns &= !PIECE[from];
+        self.black_knights &= !PIECE[from];
+        self.black_bishops &= !PIECE[from];
+        self.black_rooks &= !PIECE[from];
+        self.black_queens &= !PIECE[from];
+        self.black_kings &= !PIECE[from];
+
+        match piece_type {
+            PieceType::WhitePawn => {  self.white_pawns |= PIECE[to]; },
+            PieceType::WhiteKnight => {self.white_knights |= PIECE[to]; },
+            PieceType::WhiteBishop => {self.white_bishops |= PIECE[to]; },
+            PieceType::WhiteRook => {  self.white_rooks |= PIECE[to]; },
+            PieceType::WhiteQueen => { self.white_queens |= PIECE[to]; },
+            PieceType::WhiteKing => {  self.white_kings |= PIECE[to]; },
+
+            PieceType::BlackPawn => {  self.black_pawns |= PIECE[to]; },
+            PieceType::BlackKnight => {self.black_knights |= PIECE[to]; },
+            PieceType::BlackBishop => {self.black_bishops |= PIECE[to]; },
+            PieceType::BlackRook => {  self.black_rooks |= PIECE[to]; },
+            PieceType::BlackQueen => { self.black_queens |= PIECE[to]; },
+            PieceType::BlackKing => {  self.black_kings |= PIECE[to]; },
+            _ => panic!("No Piece Type")
+        }
     }
     
     
@@ -811,7 +843,8 @@ impl ChessBoard {
         for y in (0..8).rev() {
             for x in 0..8 {
                 let bitval: BitBoard = (1 as BitBoard) << (y*8 + x);
-                if self.all_pieces & bitval != 0 {
+                if b & bitval != 0 { print!("1 ");  }
+                else if self.all_pieces & bitval != 0 {
                     if self.black_pawns & bitval != 0 { print!("p "); }
                     if self.black_knights & bitval != 0 { print!("n "); }
                     if self.black_bishops & bitval != 0 { print!("b "); }
@@ -827,8 +860,7 @@ impl ChessBoard {
                     if self.white_kings & bitval != 0 { print!("K "); }
                 }
                 else {
-                    if b & bitval != 0 { print!("1 ");  }
-                    else { print!(". "); }
+                    print!(". ");
                 }
             }
             print!("\n");
@@ -871,7 +903,20 @@ mod tests {
         chess.move_piece(SQUARE::C4 as usize,SQUARE::F7 as usize);
         chess.print_board(0);
         
-        assert_eq!(bit_count(chess.all_pieces),32);
+        //println!("White in check = {}", chess.white_in_check());
+        //println!("Black in check = {}", chess.black_in_check());
+        
+        for i in 0..63 {
+            if chess.black_pieces & PIECE[i] != 0 {
+                let moves = chess.get_moves(PIECE[i]);
+                if moves != 0 {
+                    println!("{} {}", i / 8, i % 8);
+                    chess.print_board(moves);
+                } 
+            }
+        }
+
+        assert_eq!(2,2);
     }
 
     #[test]
