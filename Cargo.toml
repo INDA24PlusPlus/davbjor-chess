@@ -3,4 +3,12 @@ name = "davbjor-chess"
 version = "0.1.3"
 edition = "2021"
 
+[lib]
+name = "davbjor_chess"
+path = "src/lib.rs"
+
+[[bin]]
+name = "chess_program"
+path = "src/bin.rs"
+
 [dependencies]
