@@ -430,6 +430,7 @@ impl ChessBoard {
             }
         }
         else {
+            // Piece is a king
             for i in 0..63 {
                 if moves & PIECE[i] == 0 { continue; }
                 // If white moved the king
@@ -443,13 +444,83 @@ impl ChessBoard {
                     moves &= !PIECE[i];
                 } 
                 // If black moved the king
-                else if self.black_in_check(Some(
+                else if !is_white && self.black_in_check(Some(
                     self.compute_white_attacks(
                         Some(self.black_pieces & !square | PIECE[i]),
                          Some(self.white_pieces)
                     )), Some(PIECE[i])) {
                     moves &= !PIECE[i];
+
                 }
+            }
+            
+            // Add castling moves - Need another implementation for Fischer Random etc.
+            // Whites Kingside
+            if is_white && self.castling_rights.0 &&
+                self.all_pieces & PIECE[5] == 0 &&
+                self.all_pieces & PIECE[6] == 0 &&
+                !self.white_in_check(None, None) &&
+                !self.white_in_check(Some(self.compute_black_attacks(
+                    Some(self.black_pieces), 
+                    Some(self.white_pieces & !square | PIECE[5]))
+                    ), Some(PIECE[5])) &&
+                !self.white_in_check(Some(self.compute_black_attacks(
+                    Some(self.black_pieces), 
+                    Some(self.white_pieces & !square | PIECE[6]))
+                    ), Some(PIECE[6])) {
+                    moves |= PIECE[6];
+            }
+
+            // Whites Queenside
+            if is_white && self.castling_rights.1 &&
+                self.all_pieces & PIECE[3] == 0 &&
+                self.all_pieces & PIECE[2] == 0 &&
+                self.all_pieces & PIECE[1] == 0 &&
+                !self.white_in_check(None, None) &&
+                !self.white_in_check(Some(self.compute_black_attacks(
+                    Some(self.black_pieces), 
+                    Some(self.white_pieces & !square | PIECE[3]))
+                    ), Some(PIECE[3])) &&
+                !self.white_in_check(Some(self.compute_black_attacks(
+                    Some(self.black_pieces), 
+                    Some(self.white_pieces & !square | PIECE[2]))
+                    ), Some(PIECE[2])) {
+                    moves |= PIECE[2];
+            }
+            // Blacks Kingside
+            if !is_white && self.castling_rights.2 &&
+                self.all_pieces & PIECE[8*7+5] == 0 &&
+                self.all_pieces & PIECE[8*7+6] == 0 &&
+                !self.black_in_check(None, None) &&
+                !self.black_in_check(Some(
+                    self.compute_white_attacks(
+                        Some(self.black_pieces & !square | PIECE[8*7+5]),
+                         Some(self.white_pieces)
+                    )), Some(PIECE[8*7+5])) &&
+                !self.black_in_check(Some(
+                    self.compute_white_attacks(
+                        Some(self.black_pieces & !square | PIECE[8*7+6]),
+                         Some(self.white_pieces)
+                    )), Some(PIECE[8*7+6])) {
+                    moves |= PIECE[8*7+6];
+            }
+            // Blacks Queenside
+            if !is_white && self.castling_rights.3 &&
+                self.all_pieces & PIECE[8*7+3] == 0 &&
+                self.all_pieces & PIECE[8*7+2] == 0 &&
+                self.all_pieces & PIECE[8*7+1] == 0 &&
+                !self.black_in_check(None, None) &&
+                !self.black_in_check(Some(
+                    self.compute_white_attacks(
+                        Some(self.black_pieces & !square | PIECE[8*7+3]),
+                         Some(self.white_pieces)
+                    )), Some(PIECE[8*7+3])) &&
+                !self.black_in_check(Some(
+                    self.compute_white_attacks(
+                        Some(self.black_pieces & !square | PIECE[8*7+2]),
+                         Some(self.white_pieces)
+                    )), Some(PIECE[8*7+2])) {
+                    moves |= PIECE[8*7+2];
             }
         }
 
@@ -493,7 +564,30 @@ impl ChessBoard {
         let mut capture: bool = false;
         if self.all_pieces & PIECE[to] != 0 { capture = true; }
 
+        // Move piece in bitboards
         self.update_board_after_move(piece_type, from, to);
+
+        // Handle castling
+        if piece_type == PieceType::WhiteKing {
+            // White Kingside
+            if self.castling_rights.0 && to == 6 {
+                self.update_board_after_move(PieceType::WhiteRook, 7, 5);
+            }
+            // White Queenside
+            if self.castling_rights.1 && to == 2 {
+                self.update_board_after_move(PieceType::WhiteRook, 0, 3);
+            }
+        }
+        if piece_type == PieceType::BlackKing {
+            // Black Kingside
+            if self.castling_rights.2 && to == 8*7+6 {
+                self.update_board_after_move(PieceType::BlackRook, 8*7+7, 8*7+5);
+            }
+            // White Kingside
+            if self.castling_rights.3 && to == 8*7+2 {
+                self.update_board_after_move(PieceType::BlackRook, 8*7+0, 8*7+3);
+            }
+        }
 
         // Detect possible en passant square
         self.en_passant_square = 0;
@@ -657,15 +751,10 @@ impl ChessBoard {
         // Read castling rights
         self.castling_rights = (false, false, false, false);
         if fen_vec.len() >= 3 {
-            let _ = fen_vec[2].split("").map(|x| {
-                match x {
-                    "K" => self.castling_rights.0 = true,
-                    "Q" => self.castling_rights.1 = true,
-                    "k" => self.castling_rights.2 = true,
-                    "q" => self.castling_rights.3 = true,
-                    _ => (),
-                }
-            });
+            if fen_vec[2].chars().nth(0).unwrap() == 'K' { self.castling_rights.0 = true; }
+            if fen_vec[2].chars().nth(1).unwrap() == 'Q' { self.castling_rights.1 = true; }
+            if fen_vec[2].chars().nth(2).unwrap() == 'k' { self.castling_rights.2 = true; }
+            if fen_vec[2].chars().nth(3).unwrap() == 'q' { self.castling_rights.3 = true; }
         }
 
         // Read en passant square
@@ -798,5 +887,25 @@ mod tests {
         //let mut input = stdin.lock().lines();
         
         
+    }
+
+    #[test]
+    fn castling() {
+        let mut chess: ChessBoard = game();
+        chess.load("r3k2r/pppp1ppp/4p2b/8/8/B2P4/PPP1PPPP/R3K2R w KQkq - 0 1".to_string());
+        
+        //chess.print_board(0);
+
+        //chess.print_board(chess.get_moves(SQUARE::E1));
+        // Cant castle into check
+        assert_eq!(chess.move_piece(SQUARE::E1, SQUARE::C1), false);
+        assert_eq!(chess.move_piece(SQUARE::E1, SQUARE::G1), true);
+        
+        //chess.print_board(chess.get_moves(SQUARE::E8));
+        // Cant castle through check
+        assert_eq!(chess.move_piece(SQUARE::E8, SQUARE::G8), false);
+        assert_eq!(chess.move_piece(SQUARE::E8, SQUARE::C8), true);
+
+        //chess.print_board(0);
     }
 }
