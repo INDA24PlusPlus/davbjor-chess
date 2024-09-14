@@ -90,7 +90,7 @@ pub mod tables {
     /*
     Precomputed values of BitBoard for every square on the board
     */
-    pub static PIECE: [BitBoard; 64] = [
+    pub static PIECE: [BitBoard; 65] = [
         (1 as BitBoard),
         (1 as BitBoard) << 1,
         (1 as BitBoard) << 2,
@@ -154,7 +154,8 @@ pub mod tables {
         (1 as BitBoard) << 60,
         (1 as BitBoard) << 61,
         (1 as BitBoard) << 62,
-        (1 as BitBoard) << 63
+        (1 as BitBoard) << 63,
+        (0 as BitBoard)
     ];
     
     pub struct SQUARE();

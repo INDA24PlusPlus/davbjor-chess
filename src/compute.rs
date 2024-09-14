@@ -49,12 +49,12 @@ pub fn compute_king_attacks(king: BitBoard, own_pieces: BitBoard) -> BitBoard {
     let king_clip_h = king & CLEAR_FILE[7];
     let king_clip_a = king & CLEAR_FILE[0];
 
-    let spot_1 = king_clip_h << 7;
+    let spot_1 = king_clip_a << 7;
     let spot_2 = king << 8;
     let spot_3 = king_clip_h << 9;
     let spot_4 = king_clip_h << 1;
 
-    let spot_5 = king_clip_a >> 7;
+    let spot_5 = king_clip_h >> 7;
     let spot_6 = king >> 8;
     let spot_7 = king_clip_a >> 9;
     let spot_8 = king_clip_a >> 1;
@@ -70,6 +70,7 @@ pub fn compute_king_attacks(king: BitBoard, own_pieces: BitBoard) -> BitBoard {
 
     king_valid
 }
+
 
 /*
 Compute Knights valid moves (Incomplete)

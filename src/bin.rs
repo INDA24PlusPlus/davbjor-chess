@@ -1,4 +1,4 @@
-use davbjor_chess::{ChessBoard, game};
+use davbjor_chess::{ChessBoard, game, GameResult};
 use std::io;
 
 
@@ -79,9 +79,19 @@ pub fn string_to_square(s: String) -> usize {
 
 fn main() {
     let mut chess: ChessBoard = game(); 
+    //chess.load("k5rr/8/8/8/8/8/7p/7K w ---- - 0 1".to_string());
+
     chess.print_board(0);
     
     loop {
+        //Check the state of the game
+        match chess.game_result {
+            GameResult::White => { println!("White has won!"); break; },
+            GameResult::Black => { println!("Black has won!"); break; },
+            GameResult::Draw => { println!("Game is a draw!"); break; },
+            _ => ()
+        } 
+
         // Read input n
         let mut line = String::new();
         io::stdin().read_line(&mut line).expect("failed to readline");
@@ -96,7 +106,10 @@ fn main() {
             let sq2 = string_to_square(w2.trim().to_string());
             
             if sq1 == 64 || sq2 == 64 { break; }
-            chess.move_piece(sq1, sq2);
+            match chess.move_piece(sq1, sq2) {
+                Ok(_b) => (),
+                Err(s) => println!("Error: {s}")
+            }
             chess.print_board(0);
         }
         else if vec.len() == 1 {
