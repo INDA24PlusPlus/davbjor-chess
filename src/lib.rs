@@ -40,26 +40,32 @@ Need a better way to do things differently for the different piece types, 12 if 
 * D     Single piece possible moves (is in check-handling aswell)
 * D     All pieces possible moves (Probably good for checkmate handling)
 * D     Move piece (if possible)
-* -     Is position checkmate
+* D     Is position checkmate
+* D     Is position stalemate
 * -     Promoting (To N,B,R,Q)
-* -     En passant
-* -     Castling
+* D     En passant
+* D     Castling
 *
 * FEN data
 * D     Import FEN
+* -         Detect if FEN is allowed as a chess-game
 * -     Export FEN
-* -     Player turn,
-* -     En passant target square (If a pawn moves 2 places -> store the square behind it)
-* -     Castling rights (king-side, queen-side, black, white)
-* -     Halfmove count
+* D     Player turn,
+* D     En passant target square (If a pawn moves 2 places -> store the square behind it)
+* D     Castling rights (king-side, queen-side, black, white)
+* D     Halfmove count
 * 
 * Special positions/rules
 * -     Moves since last pawn move or capture (for 50 move rule)
 * -     Store old positions (for 3-fold repetition)
 * -         Data-Format (perhaps - 12(piece-types) * 64bit mask AKA bitboards)
-* -         Hashing function to compare positions
+* X         Hashing function to compare positions (not faster)
 *
 * Unit Testing
+* -     Testing special positions:
+* D         En passant
+* D         Checkmate
+* D         Stalemate
 * -     Importing series of FEN-positions of a game
 * -         Comparing amount of possible moves, with stockfish calculation
 
@@ -86,17 +92,34 @@ pub enum PieceType {
     Other
 }
 
-fn is_white(piece: PieceType) -> bool {
-    return match piece {
-        PieceType::WhitePawn => true,
-        PieceType::WhiteKnight => true,
-        PieceType::WhiteBishop => true,
-        PieceType::WhiteRook => true,
-        PieceType::WhiteQueen => true,
-        PieceType::WhiteKing => true,
-        _ => false
+impl PieceType {
+    pub fn is_white(&self) -> bool {
+        return match self {
+            PieceType::WhitePawn => true,
+            PieceType::WhiteKnight => true,
+            PieceType::WhiteBishop => true,
+            PieceType::WhiteRook => true,
+            PieceType::WhiteQueen => true,
+            PieceType::WhiteKing => true,
+            _ => false
+        }
+    }
+    pub fn is_king(&self) -> bool {
+        return match self {
+            PieceType::WhiteKing => true,
+            PieceType::BlackKing => true,
+            _ => false
+        }
+    }
+    pub fn is_pawn(&self) -> bool {
+        return match self {
+            PieceType::WhitePawn => true,
+            PieceType::BlackPawn => true,
+            _ => false
+        }
     }
 }
+
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum GameResult {
@@ -141,6 +164,8 @@ pub struct ChessBoard {
     pub halfmove_clock: i32,
     // moves since start (increment after blacks turn)
     pub fullmove: i32,
+
+    positions: Vec<Vec<BitBoard>>,
 }
 
 impl Default for ChessBoard {
@@ -173,7 +198,9 @@ impl Default for ChessBoard {
             game_result: GameResult::Ongoing,
             castling_rights: (true, true, true, true),
             halfmove_clock: 0,
-            fullmove: 1
+            fullmove: 1,
+
+            positions: vec![],
         }
     }
 }
@@ -209,6 +236,8 @@ impl ChessBoard {
         self.castling_rights = (true, true, true, true);
         self.halfmove_clock = 0;
         self.fullmove = 1;
+
+        self.positions = Vec::new();
     }
 
 
@@ -294,23 +323,12 @@ impl ChessBoard {
     Option to use altered state of whites attacking pieces, and/or a moved black king
     */
     fn black_in_check (&self, white_attacks_option: Option<BitBoard>, black_kings_option: Option<BitBoard>) -> bool {
-        let black_kings: BitBoard = black_kings_option.unwrap_or(0);
-        let white_attacks: BitBoard = white_attacks_option.unwrap_or(0);
+        let black_kings: BitBoard = black_kings_option.unwrap_or(self.black_kings);
+        let white_attacks: BitBoard = white_attacks_option.unwrap_or(
+            self.compute_white_attacks(None, None)
+        );
         
-        // Test for when white king has moved,
-        if black_kings_option.is_some() {
-            return PIECE[bit_scan(black_kings)] & white_attacks != 0;
-        }
-
-        // Test for when some black piece has moved
-        if white_attacks_option.is_some() {
-            return PIECE[bit_scan(self.black_kings)] & white_attacks != 0;
-        }
-        
-        // Test for current position
-        let white_attacks: BitBoard = self.compute_white_attacks(None, None);
-
-        return PIECE[bit_scan(self.black_kings)] & white_attacks != 0;
+        return black_kings & white_attacks != 0;
     }
 
     fn white_in_checkmate(&self) -> bool {
@@ -375,6 +393,48 @@ impl ChessBoard {
         Ok(true)
     }
 
+    fn is_three_fold_repetition(&self) -> bool {
+        let mut repetitions = 1;
+
+        let current = &self.positions[self.positions.len() - 1];
+        
+        // Loop through every stored position and compare it to the last stored position
+        for i in 0..&self.positions.len()-1 {
+            let vb = &self.positions[i];
+            let mut identical = true;
+
+            for i in 0..vb.len() {
+                if vb[i] != current[i] { identical = false; break; }
+            }
+
+            if !identical { continue; }
+
+            repetitions += 1;
+        }
+
+        if repetitions >= 3 { return true; }
+        return false;
+    }
+
+    fn store_position(&mut self) {
+        let vb: Vec<BitBoard> = vec![
+            self.white_pawns,
+            self.white_knights,
+            self.white_bishops,
+            self.white_rooks,
+            self.white_queens,
+            self.white_kings,
+            self.black_pawns,
+            self.black_knights,
+            self.black_bishops,
+            self.black_rooks,
+            self.black_queens,
+            self.black_kings
+        ];
+
+        self.positions.push(vb);
+    }
+
 
     /*
     Get BitBoard of possible moves a piece
@@ -385,8 +445,8 @@ impl ChessBoard {
         let piece_type = self.piece_at(position);
 
         // Can't move piece if it's not that sides turn
-        //if self.whites_turn && !is_white(piece_type) { return 0; }
-        //if !self.whites_turn && is_white(piece_type) { return 0; }
+        if self.whites_turn && !piece_type.is_white() { return 0; }
+        if !self.whites_turn && piece_type.is_white() { return 0; }
 
         match piece_type {
             PieceType::WhiteKing =>     moves |= compute_king_attacks(square, self.white_pieces),
@@ -406,10 +466,10 @@ impl ChessBoard {
             _ => moves = 0
         }
 
-        let is_white: bool = is_white(piece_type);
+        let is_white: bool = piece_type.is_white();
 
         // Check if this move places own side in check
-        if piece_type != PieceType::WhiteKing && piece_type != PieceType::BlackKing {
+        if !piece_type.is_king() {
             for i in 0..64 {
                 if moves & PIECE[i] == 0 { continue; }
                 // If white moved a piece (not a king)
@@ -566,8 +626,8 @@ impl ChessBoard {
         let piece_type: PieceType = self.piece_at(from);
         
         // Can't move piece if it's not that sides turn
-        if self.whites_turn && !is_white(piece_type) { return Err("Not black's turn".to_string()); }
-        if !self.whites_turn && is_white(piece_type) { return Err("Not white's turn".to_string()); }
+        if self.whites_turn && !piece_type.is_white() { return Err("Not black's turn".to_string()); }
+        if !self.whites_turn && piece_type.is_white() { return Err("Not white's turn".to_string()); }
 
         // Store if piece was captured (for halfmove clock)
         let mut capture: bool = false;
@@ -617,7 +677,7 @@ impl ChessBoard {
 
         // Halfmove clock
         self.halfmove_clock += 1;
-        if piece_type == PieceType::WhitePawn || piece_type == PieceType::BlackPawn || capture {
+        if piece_type.is_pawn() || capture {
             self.halfmove_clock = 0;
         }
 
@@ -640,8 +700,15 @@ impl ChessBoard {
         if from == SQUARE::H8 { self.castling_rights.0 = false; }
         if from == SQUARE::A8 { self.castling_rights.1 = false; }
 
-
+        // Update derived bitboards, check for checkmate, stalemate...
         self.update_board();
+
+        self.store_position();
+
+        if self.is_three_fold_repetition() {
+            self.game_result = GameResult::Draw;
+        }
+
 
         // Change player turn
         self.whites_turn = !self.whites_turn;
@@ -792,6 +859,9 @@ impl ChessBoard {
 
         // Update the derived boards
         self.update_board();
+
+        // Store position
+        self.store_position();
     }
 
     // Updates the derived boards
