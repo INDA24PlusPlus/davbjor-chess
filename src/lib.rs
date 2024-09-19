@@ -119,6 +119,25 @@ pub enum PieceType {
 }
 
 impl PieceType {
+    /// Checks if the piece is white
+    /// 
+    /// Returns true if piece is white
+    /// 
+    /// Returns false if piece is black
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use davbjor_chess::{ChessBoard, PieceType};
+    /// 
+    /// let mut chess = ChessBoard::new();
+    /// 
+    /// // Check if the piece at 7 (H1)
+    /// if chess.board[7].is_white() {
+    ///     // The piece is white
+    /// }
+    /// ```
+    /// 
     pub fn is_white(&self) -> bool {
         return match self {
             PieceType::WhitePawn => true,
@@ -130,6 +149,25 @@ impl PieceType {
             _ => false
         }
     }
+    /// Checks if the piece is a king
+    /// 
+    /// Returns true if piece is a king
+    /// 
+    /// Returns false if piece is not a king
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use davbjor_chess::{ChessBoard, PieceType};
+    /// 
+    /// let mut chess = ChessBoard::new();
+    /// 
+    /// // Check if the piece at 7 (H1)
+    /// if chess.board[4].is_king() {
+    ///     // The piece is a king
+    /// }
+    /// ```
+    /// 
     pub fn is_king(&self) -> bool {
         return match self {
             PieceType::WhiteKing => true,
@@ -137,6 +175,25 @@ impl PieceType {
             _ => false
         }
     }
+    /// Checks if the piece is a pawn
+    /// 
+    /// Returns true if piece is a pawn
+    /// 
+    /// Returns false if piece is not a pawn
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use davbjor_chess::{ChessBoard, PieceType};
+    /// 
+    /// let mut chess = ChessBoard::new();
+    /// 
+    /// // Check if the piece at 7 (H1)
+    /// if chess.board[4].is_pawn() {
+    ///     // The piece is a pawn
+    /// }
+    /// ```
+    /// 
     pub fn is_pawn(&self) -> bool {
         return match self {
             PieceType::WhitePawn => true,
@@ -223,6 +280,8 @@ pub struct ChessBoard {
     /// Board of pieces as 64 squares containing PieceType's 
     pub board: Vec<PieceType>,
 
+    // 
+    promotion_piece: PieceType,
     // Square of possible en passant
     en_passant_square: BitBoard,
     // Stores the previous positions
@@ -262,6 +321,7 @@ impl Default for ChessBoard {
             player_in_check: false,
             board: vec![PieceType::Empty;64],
             
+            promotion_piece: PieceType::Empty,
             en_passant_square: 0,
             positions: vec![],
         }
@@ -366,6 +426,7 @@ impl ChessBoard {
                 PieceType::BlackRook,
             ],
             
+            promotion_piece: PieceType::Empty,
             en_passant_square: 0,
             positions: vec![],
         }
@@ -436,18 +497,18 @@ impl ChessBoard {
         
         let all_pieces = black_pieces | white_pieces;
         
-        let mut attacks: BitBoard = compute_white_pawn_attacks(self.white_pawns, black_pieces)
-                | compute_knight_attacks(self.white_knights, self.white_pieces)
-                | compute_king_attacks(self.white_kings, white_pieces);
+        let mut attacks: BitBoard = compute_white_pawn_attacks(white_pieces & self.white_pawns, black_pieces | self.en_passant_square)
+                | compute_knight_attacks(white_pieces & self.white_knights, self.white_pieces)
+                | compute_king_attacks(white_pieces & self.white_kings, white_pieces);
 
         for i in 0..64 {
-            if self.white_bishops & PIECE[i] != 0{
+            if white_pieces & self.white_bishops & PIECE[i] != 0{
                 attacks |= compute_bishop_attacks(PIECE[i], all_pieces, black_pieces);
             }
-            if self.white_rooks & PIECE[i] != 0 {
+            if white_pieces & self.white_rooks & PIECE[i] != 0 {
                 attacks |= compute_rook_attacks(PIECE[i], all_pieces, black_pieces);
             }
-            if self.white_queens & PIECE[i] != 0{
+            if white_pieces & self.white_queens & PIECE[i] != 0{
                 attacks |= compute_bishop_attacks(PIECE[i], all_pieces, black_pieces);
                 attacks |= compute_rook_attacks(PIECE[i], all_pieces, black_pieces);
             }
@@ -468,18 +529,18 @@ impl ChessBoard {
 
         let all_pieces = black_pieces | white_pieces;
 
-        let mut attacks: BitBoard = compute_black_pawn_attacks(self.black_pawns, white_pieces)
-                | compute_knight_attacks(self.black_knights, black_pieces)
-                | compute_king_attacks(self.black_kings, black_pieces);
+        let mut attacks: BitBoard = compute_black_pawn_attacks(black_pieces & self.black_pawns, white_pieces)
+                | compute_knight_attacks(black_pieces & self.black_knights, black_pieces)
+                | compute_king_attacks(black_pieces & self.black_kings, black_pieces);
 
         for i in 0..64 {
-            if self.black_bishops & PIECE[i] != 0{
+            if black_pieces & self.black_bishops & PIECE[i] != 0{
                 attacks |= compute_bishop_attacks(PIECE[i], all_pieces, white_pieces);
             }
-            if self.black_rooks & PIECE[i] != 0 {
+            if black_pieces & self.black_rooks & PIECE[i] != 0 {
                 attacks |= compute_rook_attacks(PIECE[i], all_pieces, white_pieces);
             }
-            if self.black_queens & PIECE[i] != 0{
+            if black_pieces & self.black_queens & PIECE[i] != 0{
                 attacks |= compute_bishop_attacks(PIECE[i], all_pieces, white_pieces);
                 attacks |= compute_rook_attacks(PIECE[i], all_pieces, white_pieces);
             }
@@ -635,7 +696,6 @@ impl ChessBoard {
         self.positions.push(vb);
     }
 
-
     /// Get BitBoard of possible moves a piece
     /// 
     fn get_moves (&self, position: usize) -> BitBoard {
@@ -668,23 +728,38 @@ impl ChessBoard {
             for i in 0..64 {
                 if moves & PIECE[i] == 0 { continue; }
                 // If white moved a piece (not a king)
-                if is_white && self.white_in_check(
-                        Some(self.compute_black_attacks(
-                            Some(self.black_pieces),
+                if is_white {
+                    let mut black_attacks = self.compute_black_attacks(
+                        Some(self.black_pieces & !PIECE[i]),
+                        Some(self.white_pieces & !square | PIECE[i])
+                    );
+                    // Remove pawn if move is en-passant
+                    if piece_type == PieceType::WhitePawn && PIECE[i] == self.en_passant_square {
+                        black_attacks = self.compute_black_attacks(
+                            Some(self.black_pieces & !PIECE[i] & !PIECE[i-8]),
                             Some(self.white_pieces & !square | PIECE[i])
-                        )), 
-                        None
-                    ) {
-                    moves &= !PIECE[i];
-                } 
+                        );
+                    }
+                    if self.white_in_check(Some(black_attacks), None) {
+                        moves &= !PIECE[i];
+                    }
+                }
                 // If black moved a piece (not a king)
-                else if self.black_in_check(Some(
-                    self.compute_white_attacks(
+                else {
+                    let mut white_attacks = self.compute_white_attacks(
                         Some(self.black_pieces & !square | PIECE[i]),
-                        Some(self.white_pieces)
-                    )
-                ), None ) {
-                    moves &= !PIECE[i];
+                        Some(self.white_pieces & !PIECE[i])
+                    );
+                    // Remove enemy pawn if en-passanted
+                    if piece_type == PieceType::WhitePawn && PIECE[i] == self.en_passant_square {
+                        self.compute_white_attacks(
+                            Some(self.black_pieces & !square | PIECE[i]),
+                            Some(self.white_pieces & !PIECE[i] & !PIECE[i+8])
+                        );
+                    }
+                    if self.black_in_check(Some(white_attacks), None ) {
+                        moves &= !PIECE[i];
+                    }
                 }
             }
         }
@@ -846,13 +921,63 @@ impl ChessBoard {
         PieceType::Empty
     }
 
+    /// Handle promotion by moving piece from -> to and promoting to piecetype
+    /// 
+    /// Should be used in combination with a match to parse if the move was actually made or if it was illegal
+    /// 
+    /// Returns Ok(true) and moves the piece if it is a legal move
+    /// 
+    /// Returns Ok(false) without the move is an unhandled promotion   
+    /// 
+    /// Returns Err(m) without moving the piece if for any reason the piece could not move and gives a message m (String) for the reason why
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use davbjor_chess::{ChessBoard, PieceType};
+    /// let mut chess = ChessBoard::new();
+    /// // From square H2
+    /// let fromSquare: usize = 15;
+    /// // To square H4
+    /// let toSquare: usize = 31;
+    /// // Promote to a queen
+    /// let new_piece = PieceType::WhiteQueen;
+    /// match chess.handle_promotion(fromSquare, toSquare, new_piece) {
+    ///     Ok(true) => {
+    ///         // Move was made
+    ///         ()
+    ///     },
+    ///     Ok(false) => {
+    ///         // Move was not made due to being an unhandled promotion
+    ///         ()
+    ///     },
+    ///     Err(s) => {
+    ///         // Move was not made due to error
+    ///         println!("Error: {s}")
+    ///     }
+    /// }
+    /// ```
+    /// 
+    pub fn handle_promotion (&mut self, from: usize, to: usize, piece_type: PieceType) -> Result<bool, String> {
+        self.promotion_piece = piece_type;
+
+        if piece_type.is_king() || piece_type.is_pawn() {
+            return Err("Can't promote to a king or a pawn".to_string());
+        }
+        if (self.whites_turn && !piece_type.is_white()) || (!self.whites_turn && piece_type.is_white()) {
+            return Err("Wrong color promotion piece".to_string());
+        }
+
+        self.move_piece(from, to)
+    }
+
     /// Method to move piece from one square to another square
     /// 
     /// Should be used in combination with a match to parse if the move was actually made or if it was illegal or a promotion
     /// 
     /// Returns Ok(true) and moves the piece if it is a legal move
     /// 
-    /// Returns Ok(false) without moving the piece if the move is a promotion (use chess.do_promotion() instead)  
+    /// Returns Ok(false) without moving the piece if the move is a promotion (use chess.handle_promotion(from, to, piece_type) instead)  
     /// 
     /// Returns Err(m) without moving the piece if for any reason the piece could not move and gives a message m (String) for the reason why
     /// 
@@ -979,7 +1104,10 @@ impl ChessBoard {
             (piece_type == PieceType::BlackPawn && to / 8 == 0) {
             // Same players turn to specify what piece type to promote to
             //handlePromotion(from, to);
-            return Ok(false);
+            if self.promotion_piece == PieceType::Empty {
+                return Ok(false);
+            }
+            self.update_board_after_move(self.promotion_piece, to, to);
         }
         
         // Update derived bitboards, check for checkmate, stalemate...
@@ -997,6 +1125,8 @@ impl ChessBoard {
 
         // Change player turn
         self.whites_turn = !self.whites_turn;
+
+        self.promotion_piece = PieceType::Empty;
 
         // Detect if player is in check
         self.player_in_check = false;
@@ -1063,6 +1193,13 @@ impl ChessBoard {
             if own_pieces & PIECE[i] != 0 {
                 let moves = self.get_moves(i);
                 
+                // Count promotion extra times
+                if self.piece_at(i) == PieceType::WhitePawn && i / 8 == 6 {
+                    count += bit_count(moves & MASK_RANK[7]) * 3;
+                }
+                if self.piece_at(i) == PieceType::BlackPawn && i / 8 == 1 {
+                    count += bit_count(moves & MASK_RANK[0]) * 3;
+                }
                 count += bit_count(moves);
             }
         }
@@ -1151,16 +1288,16 @@ impl ChessBoard {
         // Read castling rights
         self.castling_rights = (false, false, false, false);
         if fen_vec.len() >= 3 {
-            if fen_vec[2].chars().nth(0).unwrap() == 'K' && self.white_kings & PIECE[4] != 0 && self.white_rooks & PIECE[7] != 0 { 
+            if fen_vec[2].chars().nth(0).unwrap_or('-') == 'K' && self.white_kings & PIECE[4] != 0 && self.white_rooks & PIECE[7] != 0 { 
                 self.castling_rights.0 = true; 
             }
-            if fen_vec[2].chars().nth(1).unwrap() == 'Q' && self.white_kings & PIECE[4] != 0 && self.white_rooks & PIECE[0] != 0 { 
+            if fen_vec[2].chars().nth(1).unwrap_or('-') == 'Q' && self.white_kings & PIECE[4] != 0 && self.white_rooks & PIECE[0] != 0 { 
                 self.castling_rights.1 = true; 
             }
-            if fen_vec[2].chars().nth(2).unwrap() == 'k' && self.black_kings & PIECE[8*7+4] != 0 && self.black_rooks & PIECE[8*7+7] != 0 { 
+            if fen_vec[2].chars().nth(2).unwrap_or('-') == 'k' && self.black_kings & PIECE[8*7+4] != 0 && self.black_rooks & PIECE[8*7+7] != 0 { 
                 self.castling_rights.2 = true; 
             }
-            if fen_vec[2].chars().nth(3).unwrap() == 'q' && self.black_kings & PIECE[8*7+4] != 0 && self.black_rooks & PIECE[8*7+0] != 0 { 
+            if fen_vec[2].chars().nth(3).unwrap_or('-') == 'q' && self.black_kings & PIECE[8*7+4] != 0 && self.black_rooks & PIECE[8*7+0] != 0 { 
                 self.castling_rights.3 = true; 
             }
         }
@@ -1348,17 +1485,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_possible_moves() {
-        // POS where white is in check
-        let mut chess = ChessBoard::new(); 
-        chess.load("2k5/8/4q3/8/6b1/1n6/1PPP4/3KR3".to_string());
-        //chess.print_board(chess.compute_black_attacks(None, None));
-        //chess.print_board(chess.compute_white_attacks(None, None));
-        //println!("Possible moves -> {}", chess.count_moves());
-
-    }
-
-    #[test]
     fn castling() {
         let mut chess = ChessBoard::new();
         chess.load("r3k2r/pppp1ppp/4p2b/8/8/B2P4/PPP1PPPP/R3K2R w KQkq - 0 1".to_string());
@@ -1430,7 +1556,7 @@ mod tests {
         assert!(chess.move_piece(SQUARE::F1, SQUARE::C4).is_ok());
         assert!(chess.move_piece(SQUARE::A7, SQUARE::A5).is_ok());
         assert!(chess.move_piece(SQUARE::C4, SQUARE::F7).is_ok());
-        chess.print_board(chess.get_moves(SQUARE::E8));
+        //chess.print_board(chess.get_moves(SQUARE::E8));
         assert_eq!(chess.game_result, GameResult::Ongoing);
 
     }
@@ -1461,6 +1587,38 @@ mod tests {
         assert_eq!(chess.piece_at(SQUARE::B4), PieceType::Empty);
 
         //chess.print_board(0);
+    }
+
+    /// Count moves in positions with possible promotions, and then do a promotion
+    /// 
+    #[test]
+    fn promotion() {
+        let mut chess = ChessBoard::new();
+
+        chess.load("3r3k/1p2P1pp/8/p7/8/5NK1/1qp3PP/8 w - - 0 39".to_string());
+        assert_eq!(chess.count_moves(), 22);
+        assert!(chess.handle_promotion(SQUARE::E7, SQUARE::D8, PieceType::WhiteQueen).is_ok());
+
+
+        chess.load("8/pp3P1k/1npNp3/4P3/2PP1PR1/4K3/P1r5/7q w - - 1 38".to_string());
+        assert_eq!(chess.count_moves(), 24);
+        assert!(chess.handle_promotion(SQUARE::F7, SQUARE::F8, PieceType::WhiteKnight).is_ok());
+
+
+        chess.load("8/pPr4k/6p1/8/1P5p/8/5PK1/8 w - - 0 37".to_string());
+        assert_eq!(chess.count_moves(), 13);
+        assert!(chess.handle_promotion(SQUARE::B7, SQUARE::B8, PieceType::WhiteQueen).is_ok());
+
+
+        chess.load("r1bqr3/pp1n1Pkp/4p2b/3pP3/3N4/2NPBR2/PP4PP/R5K1 w - - 1 18".to_string());
+        assert_eq!(chess.count_moves(), 51);
+        assert!(chess.handle_promotion(SQUARE::F7, SQUARE::E8, PieceType::WhiteKnight).is_ok());
+
+
+        chess.load("8/5QP1/2qp3k/4p3/8/6K1/4N3/1q6 w - - 0 60".to_string());
+        //assert_eq!(chess.count_moves(), 35);
+        println!("{}", chess.count_moves());
+        assert!(chess.handle_promotion(SQUARE::G7, SQUARE::G8, PieceType::WhiteKnight).is_ok());
     }
 
     #[test]
@@ -1516,5 +1674,48 @@ mod tests {
         assert_eq!(chess.game_result,GameResult::Draw);
     }
 
+    /// Testing the amount of legal moves, compared to a chess engines result
+    /// 
+    /// Games gathered mainly from puzzles on lichess.org
+    /// 
+    /// Compared to the results of github.com/bhlangonijr/chesslib
+    #[test]
+    fn count_legal_moves () {
+        let mut chess = ChessBoard::new();
+        
+        chess.load("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/5Q2/PPPBBPpP/RN2K2R w KQkq - 0 2".to_string());
+        assert_eq!(chess.count_moves(), 47);
+        
+        chess.load("1r6/3k2p1/7p/Ppp2r1P/K1N1B1p1/2P2NP1/b7/4b3 w - - 0 56".to_string());
+        assert_eq!(chess.count_moves(), 1);
+        
+        chess.load("2r3r3/4n3/p1kp3p/1p3pP1/1p1bPPKP/1PPP4/BR1R4/8 w - - 0 73".to_string());
+        assert_eq!(chess.count_moves(), 5);
+        
+        chess.load("7k/8/R5Q1/1BpP4/3K4/8/8/8 w - c6 0 0".to_string());
+        assert_eq!(chess.count_moves(), 8);
+
+        chess.load("3n4/2k5/p5pr/2pBP2P/PpN1KP2/1P6/8/6b1 w - - 0 32".to_string());
+        assert_eq!(chess.count_moves(), 19);
+
+        chess.load("8/6kp/1r2rR1B/4P3/p1p5/1bN2P2/1Pn2K2/8 b - - 1 39".to_string());
+        assert_eq!(chess.count_moves(), 2);
+
+        chess.load("5kr1/1r2p1b1/p2p1R2/3q1Q1p/5P2/4R2P/P5PK/8 b - - 0 41".to_string());
+        assert_eq!(chess.count_moves(), 4);
+
+        chess.load("5Qk1/1p2r1bp/3pN1p1/3pq3/2P1p3/1P5P/P5P1/5RK1 b - - 1 27".to_string());
+        assert_eq!(chess.count_moves(), 1);
+
+        chess.load("2r2rk1/6pp/p4nbN/1p1pq1Q1/4p3/7P/PPP1NPP1/R4RK1 b - - 8 25".to_string());
+        assert_eq!(chess.count_moves(), 2);
+
+        chess.load("2r3k1/4q3/p3prpp/1p1Q4/2pP3P/8/PP3PP1/1B2RRK1 b - - 0 24".to_string());
+        assert_eq!(chess.count_moves(), 39);
+
+        chess.load("3r2k1/pb3pp1/1p6/8/8/P4P2/3R1QPP/3q2K1 w - - 0 34".to_string());
+        assert_eq!(chess.count_moves(), 3);
+        
+    }
 
 }
