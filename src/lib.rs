@@ -1,6 +1,7 @@
 mod lookup;
 mod compute;
 
+#[warn(missing_docs)]
 #[allow(unused_imports)]
 use crate::lookup::tables::{MASK_RANK, CLEAR_RANK, MASK_FILE, CLEAR_FILE, PIECE, SQUARE, string_to_square};
 use crate::compute::patterns::{
@@ -21,7 +22,7 @@ use crate::compute::patterns::{
 
 TODO:
 
-Need a better way to do things differently for the different piece types, 12 if statements are ugly!
+Would like a better way to do things differently for the different piece types, 12 if statements are ugly!
 
 * Board representation
 * -     Currently -> 12 piece-types x 64 bit mask AKA bitboards + 3 useful bitboards (white-pieces, black-pieces, all-pieces)
@@ -43,6 +44,7 @@ Need a better way to do things differently for the different piece types, 12 if 
 * D     Is position checkmate
 * D     Is position stalemate
 * -     Promoting (To N,B,R,Q)
+* -         How to solve?!
 * D     En passant
 * D     Castling
 *
@@ -57,15 +59,19 @@ Need a better way to do things differently for the different piece types, 12 if 
 * 
 * Special positions/rules
 * -     Moves since last pawn move or capture (for 50 move rule)
-* -     Store old positions (for 3-fold repetition)
-* -         Data-Format (perhaps - 12(piece-types) * 64bit mask AKA bitboards)
-* X         Hashing function to compare positions (not faster)
+* D     Store old positions (for 3-fold repetition)
+* D         Data-Format (perhaps - 12(piece-types) * 64bit mask AKA bitboards)
+* D         Store castling-rights - unique positions if castling rights differ
+* D         Store whether the possibility of en passant exists
+* -             (currently not accounting for pinned pawns)
+
 *
 * Unit Testing
 * -     Testing special positions:
 * D         En passant
 * D         Checkmate
 * D         Stalemate
+* D         Three-move rule
 * -     Importing series of FEN-positions of a game
 * -         Comparing amount of possible moves, with stockfish calculation
 
@@ -75,6 +81,26 @@ Need a better way to do things differently for the different piece types, 12 if 
 
 type BitBoard = u64;
 
+
+/// Enum PieceType contains different types pieces in the game (and Empty)
+/// 
+/// Whites Pieces: PieceType::WhitePawn, PieceType::WhiteKnight, PieceType::WhiteBishop, PieceType::WhiteRook, PieceType::WhiteQueen, PieceType::WhiteKing
+/// 
+/// # Examples
+/// 
+/// ```
+/// use davbjor_chess::{ChessBoard, PieceType};
+/// 
+/// // Create a new game
+/// let mut chess = ChessBoard::new();
+/// 
+/// //Check the there is a white rook at square 7 (H1)
+/// if chess.board[7] == PieceType::WhiteRook {
+///     // Get the moves of the rook
+///     let rook_moves: Vec<usize> = chess.get_moves_list(7);
+/// }
+/// 
+/// ```
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum PieceType {
     WhitePawn,
@@ -89,7 +115,7 @@ pub enum PieceType {
     BlackRook,
     BlackQueen,
     BlackKing,
-    Other
+    Empty
 }
 
 impl PieceType {
@@ -120,7 +146,28 @@ impl PieceType {
     }
 }
 
-
+/// Enum GameResult contains types of state of the game
+/// 
+/// Either game is ongoing - GameResult::Ongoing
+/// Or either side has won - GameResult::White / GameResult::Black
+/// Or game is a draw - GameResult::Draw
+/// 
+/// # Examples
+/// 
+/// ```
+/// use davbjor_chess::{ChessBoard, GameResult};
+/// 
+/// // Create a new game
+/// let mut chess = ChessBoard::new();
+/// 
+/// //Check the state of the game
+/// match chess.game_result {
+///     GameResult::White => { println!("White has won!"); },
+///     GameResult::Black => { println!("Black has won!"); },
+///     GameResult::Draw => { println!("Game is a draw!"); },
+///     _ => ()
+/// } 
+/// ```
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum GameResult {
     Ongoing,
@@ -129,6 +176,15 @@ pub enum GameResult {
     Black
 }
 
+/// Contains the chessgame and can be altered by it's methods
+/// 
+/// Stores a chessboard, indexed from down-left -> right -> up
+/// A1 = 0, H1 = 8, A8 = 56, H8 = 63
+/// 
+/// Works by using bitboards (u64), for every piece type
+/// 
+/// 
+/// 
 pub struct ChessBoard {
     /* All White Pieces */
     white_pawns: BitBoard,
@@ -152,19 +208,24 @@ pub struct ChessBoard {
     all_pieces: BitBoard,
 
     /* Game Info */
-    // Players turn
+    /// Players turn (true if it is whites turn, false if it is blacks)
     pub whites_turn: bool,
+    /// State of the game (stored as the enum GameResult)
+    pub game_result: GameResult,
+    /// Stores the castling_rights of both players (K Q k q) (whites-kingside, whites queenside, blacks kingside, blacks queenside)
+    pub castling_rights: (bool, bool, bool, bool),
+    /// Moves (counting every move) since last capture/pawn move (useful for calculating 50-move rule)
+    pub halfmove_clock: i32,
+    /// Moves (times both players played) since start (increments after blacks turn)
+    pub fullmove: i32,
+    /// Player whos turn it is, is in check
+    pub player_in_check: bool,
+    /// Board of pieces as 64 squares containing PieceType's 
+    pub board: Vec<PieceType>,
+
     // Square of possible en passant
     en_passant_square: BitBoard,
-    // State of the game
-    pub game_result: GameResult,
-    // K Q k q
-    pub castling_rights: (bool, bool, bool, bool),
-    // moves since last capture/pawn move
-    pub halfmove_clock: i32,
-    // moves since start (increment after blacks turn)
-    pub fullmove: i32,
-
+    // Stores the previous positions
     positions: Vec<Vec<BitBoard>>,
 }
 
@@ -194,20 +255,139 @@ impl Default for ChessBoard {
 
             /* Game Info */
             whites_turn: true,
-            en_passant_square: 0,
             game_result: GameResult::Ongoing,
             castling_rights: (true, true, true, true),
             halfmove_clock: 0,
             fullmove: 1,
-
+            player_in_check: false,
+            board: vec![PieceType::Empty;64],
+            
+            en_passant_square: 0,
             positions: vec![],
         }
     }
 }
 
 impl ChessBoard {
-    /* Reset entire board to empty */ 
-    fn clear (&mut self) {
+    pub fn new () -> Self {
+        ChessBoard {
+            /* All White Pieces */
+            white_pawns: MASK_RANK[1],
+            white_knights: PIECE[1] | PIECE[6],
+            white_bishops: PIECE[2] | PIECE[5],
+            white_rooks: PIECE[0] | PIECE[7],
+            white_queens: PIECE[3],
+            white_kings: PIECE[4],
+            
+            /* All Black Pieces */
+            black_pawns: MASK_RANK[6],
+            black_knights: PIECE[7*8+1] | PIECE[7*8+6],
+            black_bishops: PIECE[7*8+2] | PIECE[7*8+5],
+            black_rooks: PIECE[7*8+0] | PIECE[7*8+7],
+            black_queens: PIECE[7*8+3],
+            black_kings: PIECE[7*8+4],
+        
+            /* Derived Positions */
+            white_pieces: MASK_RANK[0] | MASK_RANK[1],
+            black_pieces: MASK_RANK[6] | MASK_RANK[7],
+            all_pieces: MASK_RANK[0] | MASK_RANK[1] | MASK_RANK[6] | MASK_RANK[7],
+
+            /* Game Info */
+            whites_turn: true,
+            game_result: GameResult::Ongoing,
+            castling_rights: (true, true, true, true),
+            halfmove_clock: 0,
+            fullmove: 1,
+            player_in_check: false,
+            board: vec![
+                PieceType::WhiteRook,
+                PieceType::WhiteKnight,
+                PieceType::WhiteBishop,
+                PieceType::WhiteQueen,
+                PieceType::WhiteKing,
+                PieceType::WhiteBishop,
+                PieceType::WhiteKnight,
+                PieceType::WhiteRook,
+                PieceType::WhitePawn,
+                PieceType::WhitePawn,
+                PieceType::WhitePawn,
+                PieceType::WhitePawn,
+                PieceType::WhitePawn,
+                PieceType::WhitePawn,
+                PieceType::WhitePawn,
+                PieceType::WhitePawn,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::Empty,
+                PieceType::BlackPawn,
+                PieceType::BlackPawn,
+                PieceType::BlackPawn,
+                PieceType::BlackPawn,
+                PieceType::BlackPawn,
+                PieceType::BlackPawn,
+                PieceType::BlackPawn,
+                PieceType::BlackPawn,
+                PieceType::BlackRook,
+                PieceType::BlackKnight,
+                PieceType::BlackBishop,
+                PieceType::BlackQueen,
+                PieceType::BlackKing,
+                PieceType::BlackBishop,
+                PieceType::BlackKnight,
+                PieceType::BlackRook,
+            ],
+            
+            en_passant_square: 0,
+            positions: vec![],
+        }
+    }
+    /// Reset entire board to a blank state
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use davbjor_chess::{ChessBoard};
+    /// 
+    /// // create a new game
+    /// let mut chess = ChessBoard::new();
+    /// 
+    /// // remove every piece from the board
+    /// chess.clear();
+    /// ```
+    /// 
+    /// The default state of the chessboard is the initial position of a game
+    /// 
+    /// This can also be changed by importing a FEN-string position with chess.load(FEN)
+    pub fn clear (&mut self) {
         /* All White Pieces */
         self.white_pawns = 0;
         self.white_knights = 0;
@@ -231,12 +411,15 @@ impl ChessBoard {
         
         /* Game Info */
         self.whites_turn = true;
-        self.en_passant_square = 0;
         self.game_result = GameResult::Ongoing;
         self.castling_rights = (true, true, true, true);
         self.halfmove_clock = 0;
         self.fullmove = 1;
+        self.player_in_check = false;
 
+        self.board = vec![PieceType::Empty;64];
+        
+        self.en_passant_square = 0;
         self.positions = Vec::new();
     }
 
@@ -244,9 +427,9 @@ impl ChessBoard {
     /*
     Combine all attack patterns into one attack function, that returns a bitboard of every square currently attacked by one side.
     Note - pieces may be pinned yet can still attack a square - 
-        ex. Bishop could be pinned down on A2, By a rook on A3 when king is on A1 -> Still attacks B3,C4... and could check the other king
+        ex. Bishop could be pinned down on A2, By a rook on A3 when king is on A1 -> Still attacks B3,C4... and could check the Empty king
     */
-    pub fn compute_white_attacks (&self, black_pieces_option: Option<BitBoard>, white_pieces_option: Option<BitBoard>) -> BitBoard {
+    fn compute_white_attacks (&self, black_pieces_option: Option<BitBoard>, white_pieces_option: Option<BitBoard>) -> BitBoard {
         // Option to use a modified version of pieces
         let black_pieces: BitBoard = black_pieces_option.unwrap_or(self.black_pieces);
         let white_pieces: BitBoard = white_pieces_option.unwrap_or(self.white_pieces);
@@ -276,9 +459,9 @@ impl ChessBoard {
     /*
     Combine all attack patterns into one attack function, that returns a bitboard of every square currently attacked by one side.
     Note - pieces may be pinned yet can still attack a square - 
-        ex. Bishop could be pinned down on A2, By a rook on A3 when king is on A1 -> Still attacks B3,C4... and could check the other king
+        ex. Bishop could be pinned down on A2, By a rook on A3 when king is on A1 -> Still attacks B3,C4... and could check the Empty king
     */
-    pub fn compute_black_attacks (&self, black_pieces_option: Option<BitBoard>, white_pieces_option: Option<BitBoard>) -> BitBoard {
+    fn compute_black_attacks (&self, black_pieces_option: Option<BitBoard>, white_pieces_option: Option<BitBoard>) -> BitBoard {
         // Option to use a modified version of pieces
         let black_pieces: BitBoard = black_pieces_option.unwrap_or(self.black_pieces);
         let white_pieces: BitBoard = white_pieces_option.unwrap_or(self.white_pieces);
@@ -395,7 +578,6 @@ impl ChessBoard {
 
     fn is_three_fold_repetition(&self) -> bool {
         let mut repetitions = 1;
-
         let current = &self.positions[self.positions.len() - 1];
         
         // Loop through every stored position and compare it to the last stored position
@@ -408,7 +590,7 @@ impl ChessBoard {
             }
 
             if !identical { continue; }
-
+            
             repetitions += 1;
         }
 
@@ -417,6 +599,22 @@ impl ChessBoard {
     }
 
     fn store_position(&mut self) {
+        // Store the castling rights as a bitboard
+        let mut castling: BitBoard = 0;
+        if self.castling_rights.0 { castling |= (1 as BitBoard) << 1; }
+        if self.castling_rights.1 { castling |= (1 as BitBoard) << 2; }
+        if self.castling_rights.2 { castling |= (1 as BitBoard) << 3; }
+        if self.castling_rights.3 { castling |= (1 as BitBoard) << 4; }
+
+        // Store the whether the possibility of en passant exists as bitboard (not accounting for pinned pawns)
+        let mut en_passant_possible: BitBoard = 0;
+        if self.en_passant_square & 
+            (compute_white_pawn_attacks(self.white_pawns, self.en_passant_square)
+            | compute_black_pawn_attacks(self.black_pawns, self.en_passant_square)
+            ) != 0 {
+            en_passant_possible = 1;
+        }
+        
         let vb: Vec<BitBoard> = vec![
             self.white_pawns,
             self.white_knights,
@@ -429,25 +627,22 @@ impl ChessBoard {
             self.black_bishops,
             self.black_rooks,
             self.black_queens,
-            self.black_kings
+            self.black_kings,
+            en_passant_possible,
+            castling            
         ];
 
         self.positions.push(vb);
     }
 
 
-    /*
-    Get BitBoard of possible moves a piece
-    */
-    pub fn get_moves (&self, position: usize) -> BitBoard {
+    /// Get BitBoard of possible moves a piece
+    /// 
+    fn get_moves (&self, position: usize) -> BitBoard {
         let square: BitBoard = PIECE[position];
         let mut moves = 0;
         let piece_type = self.piece_at(position);
-
-        // Can't move piece if it's not that sides turn
-        if self.whites_turn && !piece_type.is_white() { return 0; }
-        if !self.whites_turn && piece_type.is_white() { return 0; }
-
+                
         match piece_type {
             PieceType::WhiteKing =>     moves |= compute_king_attacks(square, self.white_pieces),
             PieceType::WhiteQueen =>    moves |= compute_rook_attacks(square, self.all_pieces, self.black_pieces)
@@ -518,7 +713,7 @@ impl ChessBoard {
                 }
             }
             
-            // Add castling moves - Need another implementation for Fischer Random etc.
+            // Add castling moves - Need anEmpty implementation for Fischer Random etc.
             // Whites Kingside
             if is_white && self.castling_rights.0 &&
                 self.all_pieces & PIECE[5] == 0 &&
@@ -591,8 +786,50 @@ impl ChessBoard {
         moves
     }
 
+    /// Returns a list of all squares the piece at a certain position can move to
+    /// 
+    /// Will only show legal moves of the current players turns own pieces (cant move enemies pieces)
+    /// 
+    /// 
+    pub fn get_moves_list(&self, position: usize) -> Vec<usize> {
+        let mut moves: Vec<usize> = vec![];
+        if position > 63 { return moves; }
+
+        let piece_type = self.piece_at(position);
+
+        // Can't move piece if it's not that sides turn
+        if self.whites_turn && !piece_type.is_white() { return moves; }
+        if !self.whites_turn && piece_type.is_white() { return moves; }
+
+        let bb = self.get_moves(position);
+        for i in 0..64 {
+            if bb & ((1 as BitBoard) << i) != 0 {
+                moves.push(i);
+            }
+        }
+
+        return moves;
+    }
+
+    /// Gives the PieceType at a certain square (0-63 inclusive)
+    /// 
+    /// This method returns the PieceType of the piece at a square
+    /// 
+    /// Returns PieceType::Empty if no piece is at the square
+    /// 
+    /// ```
+    /// use davbjor_chess::{ChessBoard, PieceType};
+    /// let mut chess = ChessBoard::new();
+    /// let square: usize = 52;
+    /// if chess.piece_at(square) == PieceType::WhiteKing {
+    ///     // The piece at square 52 (E7) is the White King
+    /// }
+    /// ```
+    /// 
     pub fn piece_at (&self, position: usize) -> PieceType {
         let square: BitBoard = PIECE[position];
+        if self.all_pieces & square == 0 { return PieceType::Empty; }
+
         if self.white_pawns & square != 0 { return PieceType::WhitePawn; }
         if self.black_pawns & square != 0 { return PieceType::BlackPawn; }
         if self.white_knights & square != 0 { return PieceType::WhiteKnight; }
@@ -606,9 +843,46 @@ impl ChessBoard {
         if self.white_kings & square != 0 { return PieceType::WhiteKing; }
         if self.black_kings & square != 0 { return PieceType::BlackKing; }
 
-        PieceType::Other
+        PieceType::Empty
     }
 
+    /// Method to move piece from one square to another square
+    /// 
+    /// Should be used in combination with a match to parse if the move was actually made or if it was illegal or a promotion
+    /// 
+    /// Returns Ok(true) and moves the piece if it is a legal move
+    /// 
+    /// Returns Ok(false) without moving the piece if the move is a promotion (use chess.do_promotion() instead)  
+    /// 
+    /// Returns Err(m) without moving the piece if for any reason the piece could not move and gives a message m (String) for the reason why
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use davbjor_chess::{ChessBoard};
+    /// let mut chess = ChessBoard::new();
+    /// // From square H2
+    /// let fromSquare: usize = 15;
+    /// // To square H4
+    /// let toSquare: usize = 31;
+    /// match chess.move_piece(fromSquare, toSquare) {
+    ///     Ok(true) => {
+    ///         // Move was made
+    ///         ()
+    ///     },
+    ///     Ok(false) => {
+    ///         // Move was not made due to move being promotion
+    ///         // Should do a promotion using do_promotion into the desired PieceType
+    ///         // example: chess.do_promotion(fromSquare, toSquare, PieceType::WhiteQueen)
+    ///         ()
+    ///     },
+    ///     Err(s) => {
+    ///         // Move was not made due to error
+    ///         println!("Error: {s}")
+    ///     }
+    /// }
+    /// ```
+    /// 
     pub fn move_piece (&mut self, from: usize, to: usize) -> Result<bool, String> {
         if self.game_result != GameResult::Ongoing {
             return Err("Game is finished".to_string());
@@ -700,6 +974,14 @@ impl ChessBoard {
         if from == SQUARE::H8 { self.castling_rights.0 = false; }
         if from == SQUARE::A8 { self.castling_rights.1 = false; }
 
+        // Promotion handling
+        if (piece_type == PieceType::WhitePawn && to / 8 == 7) || 
+            (piece_type == PieceType::BlackPawn && to / 8 == 0) {
+            // Same players turn to specify what piece type to promote to
+            //handlePromotion(from, to);
+            return Ok(false);
+        }
+        
         // Update derived bitboards, check for checkmate, stalemate...
         self.update_board();
 
@@ -709,9 +991,21 @@ impl ChessBoard {
             self.game_result = GameResult::Draw;
         }
 
+        if self.game_result == GameResult::Ongoing && self.halfmove_clock >= 100 {
+            self.game_result = GameResult::Draw;
+        }
 
         // Change player turn
         self.whites_turn = !self.whites_turn;
+
+        // Detect if player is in check
+        self.player_in_check = false;
+        if self.whites_turn && self.white_in_check(None, None) {
+            self.player_in_check = true;
+        }
+        if !self.whites_turn && self.black_in_check(None, None) {
+            self.player_in_check = true;
+        }
 
         return Ok(true);
     }
@@ -748,6 +1042,19 @@ impl ChessBoard {
         }
     }
     
+    /// Get the number of possible moves for the current player in a position
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use davbjor_chess::{ChessBoard};
+    /// // Create a new game
+    /// let mut chess = ChessBoard::new();
+    /// 
+    /// let amount_of_moves = chess.count_moves();
+    /// 
+    /// ```
+    /// 
     pub fn count_moves(&self) -> usize {
         let own_pieces = if self.whites_turn { self.white_pieces } else { self.black_pieces };
         let mut count = 0;
@@ -763,6 +1070,27 @@ impl ChessBoard {
         count
     }
 
+    
+    /// Imports a position by a FEN-string into the game
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use davbjor_chess::{ChessBoard};
+    /// 
+    /// // create a new game
+    /// let mut chess = ChessBoard::new();
+    /// 
+    /// let fen = "rnbqkbnr/1p3p1p/8/P1PpP1P1/p1p1p1pP/8/1P1P1P2/RNBQKBNR w KQkq d6 0 1".to_string();
+    /// 
+    /// // Change the position of the game into the FEN-string
+    /// chess.load(fen);
+    /// ```
+    /// 
+    /// Loading a FEN-string resets the games state (chess.game_result, ...)
+    /// 
+    /// If a bad FEN-string is passed the game in the best case be cleared, and in the worst case crash
+    /// 
     
     pub fn load (&mut self, fen: String) {
         // Clear the entire board
@@ -864,6 +1192,73 @@ impl ChessBoard {
         self.store_position();
     }
 
+    
+    /// Ends the game by white surrendering
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use davbjor_chess::{ChessBoard, GameResult};
+    /// 
+    /// // create a new game
+    /// let mut chess = ChessBoard::new();
+    /// 
+    /// // Surrender the game for white
+    /// chess.white_surrender();
+    /// 
+    /// if chess.game_result != GameResult::Black {
+    ///     println!("White did not surrender, something wierd is going on!");
+    /// }
+    /// ```
+    /// 
+    pub fn white_surrender(&mut self){
+        self.game_result = GameResult::Black;
+    }
+
+    /// Ends the game by black surrendering
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use davbjor_chess::{ChessBoard, GameResult};
+    /// 
+    /// // create a new game
+    /// let mut chess = ChessBoard::new();
+    /// 
+    /// // Surrender the game for black
+    /// chess.black_surrender();
+    /// 
+    /// if chess.game_result != GameResult::White {
+    ///     println!("Black did not surrender, something wierd is going on!");
+    /// }
+    /// ```
+    /// 
+    pub fn black_surrender(&mut self){
+        self.game_result = GameResult::White;
+    }
+
+    /// Ends the game by draw (if both players want it)
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use davbjor_chess::{ChessBoard, GameResult};
+    /// 
+    /// // create a new game
+    /// let mut chess = ChessBoard::new();
+    /// 
+    /// // End game by draw
+    /// chess.mutual_draw();
+    /// 
+    /// if chess.game_result != GameResult::Draw {
+    ///     println!("The game is not a tie, something wierd is going on!");
+    /// }
+    /// ```
+    /// 
+    pub fn mutual_draw(&mut self){
+        self.game_result = GameResult::Draw;
+    }
+
     // Updates the derived boards
     fn update_board (&mut self) {
         self.white_pieces = self.white_pawns | self.white_knights | self.white_bishops | self.white_rooks | self.white_queens | self.white_kings;
@@ -884,9 +1279,32 @@ impl ChessBoard {
         if self.white_in_stalemate().is_ok() {
             self.game_result = GameResult::Draw;
         }
+
+        for i in 0..64 {
+            self.board[i] = PieceType::Empty;
+            if self.all_pieces & PIECE[i] != 0 {
+                self.board[i] = self.piece_at(i);
+            }
+        }
     }
 
 
+    /// Reset the game to the starting position
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use davbjor_chess::{ChessBoard, GameResult};
+    /// 
+    /// // create a new game
+    /// let mut chess = ChessBoard::new();
+    /// 
+    /// // Unnecessary right now, but could be useful sometimes in games
+    /// chess.reset();
+    /// 
+    /// ```
+    /// 
+    /// 
     pub fn reset (&mut self) {
         self.load("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string());
     }
@@ -935,65 +1353,21 @@ pub fn game () -> ChessBoard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    #[test]
-    fn it_works() {
-        let mut chess: ChessBoard = game(); 
-        println!("Game Loaded!");
-
-        chess.print_board(0);
-
-        let _ = chess.move_piece(SQUARE::E2,SQUARE::E4);
-        chess.print_board(0);
-        println!("Possible moves -> {}", chess.count_moves());
-
-        let _ = chess.move_piece(SQUARE::E7,SQUARE::E5);
-        chess.print_board(0);
-        println!("Possible moves -> {}", chess.count_moves());
-
-        let _ = chess.move_piece(SQUARE::F1,SQUARE::C4);
-        chess.print_board(0);
-        println!("Possible moves -> {}", chess.count_moves());
-        
-
-        let _ = chess.move_piece(SQUARE::A7,SQUARE::A6);
-        chess.print_board(0);
-        println!("Possible moves -> {}", chess.count_moves());
-
-        let _ = chess.move_piece(SQUARE::C4,SQUARE::F7);
-        chess.print_board(0);
-        println!("Possible moves -> {}", chess.count_moves());
-
-        assert_eq!(2,2);
-    }
 
     #[test]
     fn test_possible_moves() {
         // POS where white is in check
-        let mut chess: ChessBoard = game(); 
+        let mut chess = ChessBoard::new(); 
         chess.load("2k5/8/4q3/8/6b1/1n6/1PPP4/3KR3".to_string());
-        chess.print_board(chess.compute_black_attacks(None, None));
-        chess.print_board(chess.compute_white_attacks(None, None));
-        println!("Possible moves -> {}", chess.count_moves());
+        //chess.print_board(chess.compute_black_attacks(None, None));
+        //chess.print_board(chess.compute_white_attacks(None, None));
+        //println!("Possible moves -> {}", chess.count_moves());
 
-    }
-
-    #[test]
-    fn play_game() {
-        let mut chess: ChessBoard = game(); 
-        chess.load("k7/8/8/8/8/8/8/7K".to_string());
-
-        //chess.print_board(compute_king_attacks(PIECE[7], PIECE[7]));
-        //chess.print_board(compute_king_attacks(PIECE[7*8], PIECE[7*8]));
-        //let     stdin = std::io::stdin();
-        //let mut input = stdin.lock().lines();
-        
-        
     }
 
     #[test]
     fn castling() {
-        let mut chess: ChessBoard = game();
+        let mut chess = ChessBoard::new();
         chess.load("r3k2r/pppp1ppp/4p2b/8/8/B2P4/PPP1PPPP/R3K2R w KQkq - 0 1".to_string());
         
         //chess.print_board(0);
@@ -1008,12 +1382,12 @@ mod tests {
         assert!(chess.move_piece(SQUARE::E8, SQUARE::G8).is_err());
         assert!(chess.move_piece(SQUARE::E8, SQUARE::C8).is_ok());
 
-        chess.print_board(0);
+        //chess.print_board(0);
     }
 
     #[test]
     fn white_in_stalemate() {
-        let mut chess: ChessBoard = game();
+        let mut chess = ChessBoard::new();
         chess.load("k5rr/8/8/8/8/8/7p/7K w ---- - 0 1".to_string());
         /*
         chess.print_board(0);
@@ -1025,7 +1399,7 @@ mod tests {
 
     #[test]
     fn black_in_stalemate() {
-        let mut chess: ChessBoard = game();
+        let mut chess = ChessBoard::new();
         chess.load("k7/8/8/8/8/8/5B2/1R5K b ---- - 0 1".to_string());
         /*
         chess.print_board(0);
@@ -1039,23 +1413,44 @@ mod tests {
 
     #[test]
     fn white_in_check() {
-        let mut chess: ChessBoard = game();
+        let mut chess = ChessBoard::new();
         chess.load("2k5/8/4q3/8/6b1/1n6/1PPP4/3KR3".to_string());
         assert_eq!(chess.white_in_check(None, None), true);
+        assert_eq!(chess.game_result, GameResult::Ongoing);
 
         chess.load("k6q/8/8/8/8/8/8/7K".to_string());
         assert_eq!(chess.white_in_check(None, None), true);
+        assert_eq!(chess.game_result, GameResult::Ongoing);
+    }
+
+    /// Bug detected where game ended by checkmate when it was a sacrificial check
+    /// 
+    /// Solved by removal of the requirement for the own side to be the player in turn
+    /// Moved that requirement to the get_moves_list function
+    /// 
+    #[test]
+    fn checkmate_bug() {
+        let mut chess = ChessBoard::new();
+
+        assert!(chess.move_piece(SQUARE::E2, SQUARE::E4).is_ok());
+        assert!(chess.move_piece(SQUARE::E7, SQUARE::E5).is_ok());
+        assert!(chess.move_piece(SQUARE::F1, SQUARE::C4).is_ok());
+        assert!(chess.move_piece(SQUARE::A7, SQUARE::A5).is_ok());
+        assert!(chess.move_piece(SQUARE::C4, SQUARE::F7).is_ok());
+        chess.print_board(chess.get_moves(SQUARE::E8));
+        assert_eq!(chess.game_result, GameResult::Ongoing);
+
     }
 
     #[test]
     fn en_passant() {
-        let mut chess: ChessBoard = game();
+        let mut chess = ChessBoard::new();
         chess.load("rnbqkbnr/1p3p1p/8/P1PpP1P1/p1p1p1pP/8/1P1P1P2/RNBQKBNR w KQkq d6 0 1".to_string());
         
         // White can do en passant at d6 (due to fen string recording d6)
             //chess.print_board(chess.get_moves(SQUARE::E5));
         assert!(chess.move_piece(SQUARE::E5, SQUARE::D6).is_ok());
-        assert_eq!(chess.piece_at(SQUARE::D5), PieceType::Other);
+        assert_eq!(chess.piece_at(SQUARE::D5), PieceType::Empty);
         
         // Black cant do en passant at h3 (due to that move not being made last turn)
             //chess.print_board(chess.get_moves(SQUARE::G4));
@@ -1070,9 +1465,63 @@ mod tests {
             //chess.print_board(chess.get_moves(SQUARE::A4));
             //chess.print_board(chess.get_moves(SQUARE::C4));
         assert!(chess.move_piece(SQUARE::A4, SQUARE::B3).is_ok());
-        assert_eq!(chess.piece_at(SQUARE::B4), PieceType::Other);
+        assert_eq!(chess.piece_at(SQUARE::B4), PieceType::Empty);
 
         //chess.print_board(0);
     }
+
+    #[test]
+    fn three_fold_repetition() {
+        let mut chess = ChessBoard::new();
+
+        // Move pawns
+        assert!(chess.move_piece(SQUARE::E2, SQUARE::E4).is_ok());
+        assert!(chess.move_piece(SQUARE::E7, SQUARE::E5).is_ok());
+
+        // Begin to shuffle kings
+        assert!(chess.move_piece(SQUARE::E1, SQUARE::E2).is_ok());
+        assert!(chess.move_piece(SQUARE::E8, SQUARE::E7).is_ok());
+        // Above is the first time in repeatable position due to castling-rights now being gone
+
+
+        assert!(chess.move_piece(SQUARE::E2, SQUARE::E1).is_ok());
+        assert!(chess.move_piece(SQUARE::E7, SQUARE::E8).is_ok());
+        assert!(chess.move_piece(SQUARE::E1, SQUARE::E2).is_ok());
+        assert!(chess.move_piece(SQUARE::E8, SQUARE::E7).is_ok());
+        
+        // Now twice repeated
+        assert!(chess.move_piece(SQUARE::E2, SQUARE::E1).is_ok());
+        assert!(chess.move_piece(SQUARE::E7, SQUARE::E8).is_ok());
+        assert!(chess.move_piece(SQUARE::E1, SQUARE::E2).is_ok());
+        
+        // Last one
+        assert!(chess.move_piece(SQUARE::E8, SQUARE::E7).is_ok());
+
+        // Cant move anymore
+        assert!(chess.move_piece(SQUARE::E8, SQUARE::E7).is_err());
+
+        // Check if game is draw
+        assert_eq!(chess.game_result,GameResult::Draw);
+    }
+
+    #[test]    
+    fn fifty_move_rule() {
+        let mut chess = ChessBoard::new();
+        chess.load("k7/8/8/8/8/8/8/7K w ---- - 96 70".to_string());
+
+        // Walk kings
+        assert!(chess.move_piece(SQUARE::H1, SQUARE::H2).is_ok());
+        assert!(chess.move_piece(SQUARE::A8, SQUARE::A7).is_ok());
+        assert!(chess.move_piece(SQUARE::H2, SQUARE::H3).is_ok());
+        assert!(chess.move_piece(SQUARE::A7, SQUARE::A6).is_ok());
+        // Reached 100 moves
+
+        // Cant move again
+        assert!(chess.move_piece(SQUARE::H3, SQUARE::H4).is_err());
+
+        // Check if game is draw
+        assert_eq!(chess.game_result,GameResult::Draw);
+    }
+
 
 }

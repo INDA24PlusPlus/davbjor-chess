@@ -1,4 +1,4 @@
-use davbjor_chess::{ChessBoard, game, GameResult};
+use davbjor_chess::{ChessBoard, PieceType, GameResult};
 use std::io;
 
 
@@ -78,7 +78,7 @@ pub fn string_to_square(s: String) -> usize {
     
 
 fn main() {
-    let mut chess: ChessBoard = game(); 
+    let mut chess = ChessBoard::new(); 
     //chess.load("k5rr/8/8/8/8/8/7p/7K w ---- - 0 1".to_string());
 
     chess.print_board(0);
@@ -91,6 +91,29 @@ fn main() {
             GameResult::Draw => { println!("Game is a draw!"); break; },
             _ => ()
         } 
+
+        for i in (0..8).rev() {
+            let mut s = "".to_string();
+            for j in 0..8 {
+                match chess.board[i*8+j] {
+                    PieceType::WhitePawn => s.push('P'),
+                    PieceType::WhiteKnight => s.push('N'),
+                    PieceType::WhiteBishop => s.push('B'),
+                    PieceType::WhiteRook => s.push('R'),
+                    PieceType::WhiteQueen => s.push('Q'),
+                    PieceType::WhiteKing => s.push('K'),
+                    PieceType::BlackPawn => s.push('P'),
+                    PieceType::BlackKnight => s.push('N'),
+                    PieceType::BlackBishop => s.push('B'),
+                    PieceType::BlackRook => s.push('R'),
+                    PieceType::BlackQueen => s.push('Q'),
+                    PieceType::BlackKing => s.push('K'),
+                    PieceType::Empty => s.push('.'),
+                    _ => (),
+                }
+            }
+            println!("{s}");
+        }
 
         // Read input n
         let mut line = String::new();
@@ -107,18 +130,22 @@ fn main() {
             
             if sq1 == 64 || sq2 == 64 { break; }
             match chess.move_piece(sq1, sq2) {
-                Ok(_b) => (),
+                Ok(true) => {
+                    ()
+                },
+                Ok(false) => (),
                 Err(s) => println!("Error: {s}")
             }
-            chess.print_board(0);
         }
         else if vec.len() == 1 {
             let w1 = vec[0];
             let sq1 = string_to_square(w1.trim().to_string());
 
             if sq1 == 64 { break; }
-            let moves = chess.get_moves(sq1);
-            chess.print_board(moves);
+            let moves = chess.get_moves_list(sq1);
+            for m in moves {
+                println!("{m}");
+            }
         }
 
     }
