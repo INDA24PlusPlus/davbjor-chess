@@ -80,8 +80,6 @@ pub fn string_to_square(s: String) -> usize {
 fn main() {
     let mut chess = ChessBoard::new(); 
     //chess.load("k5rr/8/8/8/8/8/7p/7K w ---- - 0 1".to_string());
-
-    chess.print_board(0);
     
     loop {
         //Check the state of the game
@@ -94,26 +92,28 @@ fn main() {
 
         for i in (0..8).rev() {
             let mut s = "".to_string();
+            print!("{}    ", i+1);
             for j in 0..8 {
                 match chess.board[i*8+j] {
-                    PieceType::WhitePawn => s.push('P'),
-                    PieceType::WhiteKnight => s.push('N'),
-                    PieceType::WhiteBishop => s.push('B'),
-                    PieceType::WhiteRook => s.push('R'),
-                    PieceType::WhiteQueen => s.push('Q'),
-                    PieceType::WhiteKing => s.push('K'),
-                    PieceType::BlackPawn => s.push('P'),
-                    PieceType::BlackKnight => s.push('N'),
-                    PieceType::BlackBishop => s.push('B'),
-                    PieceType::BlackRook => s.push('R'),
-                    PieceType::BlackQueen => s.push('Q'),
-                    PieceType::BlackKing => s.push('K'),
-                    PieceType::Empty => s.push('.'),
+                    PieceType::WhitePawn => s.push_str("P "),
+                    PieceType::WhiteKnight => s.push_str("N "),
+                    PieceType::WhiteBishop => s.push_str("B "),
+                    PieceType::WhiteRook => s.push_str("R "),
+                    PieceType::WhiteQueen => s.push_str("Q "),
+                    PieceType::WhiteKing => s.push_str("K "),
+                    PieceType::BlackPawn => s.push_str("P "),
+                    PieceType::BlackKnight => s.push_str("N "),
+                    PieceType::BlackBishop => s.push_str("B "),
+                    PieceType::BlackRook => s.push_str("R "),
+                    PieceType::BlackQueen => s.push_str("Q "),
+                    PieceType::BlackKing => s.push_str("K "),
+                    PieceType::Empty => s.push_str(". "),
                     _ => (),
                 }
             }
             println!("{s}");
         }
+        println!("\n     A B C D E F G H");
 
         // Read input n
         let mut line = String::new();

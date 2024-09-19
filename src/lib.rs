@@ -1343,13 +1343,6 @@ impl ChessBoard {
     }
 }
 
-pub fn game () -> ChessBoard {
-    let mut chess = ChessBoard { ..Default::default() };
-    chess.reset();
-
-    chess
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
