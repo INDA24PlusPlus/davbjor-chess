@@ -5,7 +5,6 @@ mod compute;
 #[allow(unused_imports)]
 use crate::lookup::tables::{MASK_RANK, CLEAR_RANK, MASK_FILE, CLEAR_FILE, PIECE, SQUARE, string_to_square};
 use crate::compute::patterns::{
-    bit_scan,
     bit_count,
     compute_king_attacks, 
     compute_knight_attacks, 
@@ -22,7 +21,7 @@ use crate::compute::patterns::{
 
 TODO:
 
-Would like a better way to do things differently for the different piece types, 12 if statements are ugly!
+Some parts of this code is really ugly :(
 
 * Board representation
 * -     Currently -> 12 piece-types x 64 bit mask AKA bitboards + 3 useful bitboards (white-pieces, black-pieces, all-pieces)
@@ -43,8 +42,7 @@ Would like a better way to do things differently for the different piece types, 
 * D     Move piece (if possible)
 * D     Is position checkmate
 * D     Is position stalemate
-* -     Promoting (To N,B,R,Q)
-* -         How to solve?!
+* D     Promoting (To N,B,R,Q)
 * D     En passant
 * D     Castling
 *
@@ -58,7 +56,7 @@ Would like a better way to do things differently for the different piece types, 
 * D     Halfmove count
 * 
 * Special positions/rules
-* -     Moves since last pawn move or capture (for 50 move rule)
+* D     Moves since last pawn move or capture (for 50 move rule)
 * D     Store old positions (for 3-fold repetition)
 * D         Data-Format (perhaps - 12(piece-types) * 64bit mask AKA bitboards)
 * D         Store castling-rights - unique positions if castling rights differ
@@ -72,8 +70,8 @@ Would like a better way to do things differently for the different piece types, 
 * D         Checkmate
 * D         Stalemate
 * D         Three-move rule
-* -     Importing series of FEN-positions of a game
-* -         Comparing amount of possible moves, with stockfish calculation
+* D         Importing series of FEN-positions of a game
+* D         Comparing amount of possible moves, with stockfish calculation
 
 
 */
@@ -752,7 +750,7 @@ impl ChessBoard {
                     );
                     // Remove enemy pawn if en-passanted
                     if piece_type == PieceType::WhitePawn && PIECE[i] == self.en_passant_square {
-                        self.compute_white_attacks(
+                        white_attacks = self.compute_white_attacks(
                             Some(self.black_pieces & !square | PIECE[i]),
                             Some(self.white_pieces & !PIECE[i] & !PIECE[i+8])
                         );

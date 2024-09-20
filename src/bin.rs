@@ -107,8 +107,7 @@ fn main() {
                     PieceType::BlackRook => s.push_str("R "),
                     PieceType::BlackQueen => s.push_str("Q "),
                     PieceType::BlackKing => s.push_str("K "),
-                    PieceType::Empty => s.push_str(". "),
-                    _ => (),
+                    PieceType::Empty => s.push_str(". ")
                 }
             }
             println!("{s}");

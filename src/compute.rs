@@ -2,7 +2,7 @@ pub mod patterns {
 
 
 type BitBoard = u64;
-use crate::lookup::tables::{MASK_RANK, CLEAR_RANK, MASK_FILE, CLEAR_FILE, PIECE, SQUARE};
+use crate::lookup::tables::{MASK_RANK, CLEAR_FILE};
 
 
 /*
