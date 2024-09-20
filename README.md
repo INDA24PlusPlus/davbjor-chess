@@ -3,7 +3,7 @@ Chess library in Rust
 
 ## How to use
 1. Add to your Cargo.toml
-```
+```rust
 [dependencies]
 davbjor-chess = { git = "https://github.com/INDA24PlusPlus/davbjor-chess.git" }
 
@@ -11,19 +11,19 @@ davbjor-chess = { git = "https://github.com/INDA24PlusPlus/davbjor-chess.git" }
 
 2. Use the crate in your program
 Import the relevant crate.
-```
+```rust
 extern crate davbjor_chess;
 use davbjor_chess::{ChessBoard, PieceType, GameResult};
 ```
 
 3. Create an instance of the game
-```
+```rust
 let mut chess = ChessBoard::new();
 ```
 
 4. Creating a chess game
 There are many methods related to the ChessBoard struct, you can see how to use them by running the rustdoc of the library in the terminal by running:
-```
+```bash
 cargo doc --open
 ```
 
