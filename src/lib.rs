@@ -240,6 +240,7 @@ pub enum GameResult {
 /// 
 /// 
 /// 
+#[derive(Debug, Clone)]
 pub struct ChessBoard {
     /* All White Pieces */
     white_pawns: BitBoard,
